@@ -1,0 +1,377 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri May 12 11:07:02 2017
+
+@author: hanseni
+
+This module creates functions and classes for visualizing results.
+
+ 
+"""
+
+
+import seaborn as sns 
+import pandas as pd
+import matplotlib.pyplot as plt 
+import matplotlib as mpl
+import fnmatch 
+from matplotlib import dates
+
+import modelclass as mc
+        
+#%%
+def meltdim(df,dims=['dima','dimb'],source='Latest'):
+    ''' Melts a wide dataframe the variable names are split to dimensions acording 
+    to the list of texts in dims. in variablenames 
+    the tall dataframe have a variable name for each dimensions 
+    also values and source are introduced ac column names in the dataframe ''' 
+    splitstring = (r'\|').join(['(?P<'+d+'>[A-Z0-9_]*)' for d in dims])
+    melted = pd.melt(df.reset_index().rename(columns={'index':'quarter'}),id_vars='quarter')
+    vardf = (melted
+      .assign(source=source)      
+      .assign(varname = lambda df_ :df_.variable.str.replace('__','|',len(dims)-1))   # just to make the next step more easy 
+      .pipe(lambda df_ : pd.concat([df_ ,df_.varname.str.extract(splitstring,expand=True)],axis=1)))
+    return vardf
+
+
+class vis():
+     ''' Visualization class. used as a method on a model instance. 
+        
+        The purpose is to select variables acording to a pattern, potential with wildcards
+     '''
+     def __init__(self, model=None, pat='',names=None,df=None):
+         self.model = model
+         self.__pat__ = pat
+         self.names = self.model.vlist(self.__pat__)
+         if isinstance(df,pd.DataFrame):
+             self.thisdf = df 
+         else:
+             self.thisdf = self.model.lastdf.loc[:,self.names] 
+         return
+     
+     def heat(self,*args, **kwargs):
+         ''' Displays a heatmap of the resulting dataframe'''
+         
+         name = kwargs.pop('title',self.__pat__)
+         a = heatshow(self.thisdf.loc[self.model.current_per,:].T,
+                      name=name,*args, **kwargs)
+         return a 
+ 
+     def plot(self,*args, **kwargs):
+         ''' Displays a plot for each of the columns in the resulting dataframe '''
+         
+         name = kwargs.get('title','Title')
+         a = plotshow(self.thisdf.loc[self.model.current_per,:],
+                      name=name,*args,**kwargs)
+         return a 
+     
+     def box(self):
+             ''' Displays a boxplot comparing basedf and lastdf ''' 
+             return compvis(model=self.model,pat=self.__pat__).box()
+     def violin(self):
+             ''' Displays a violinplot comparing basedf and lastdf ''' 
+             return compvis(model=self.model,pat=self.__pat__).violin()
+     def swarm(self):
+             ''' Displays a swarmlot comparing basedf and lastdf ''' 
+             return compvis(model=self.model,pat=self.__pat__).swarm()
+     
+     
+     @property     
+     def df(self):
+         ''' Returns the result of this instance as a dataframe'''
+         return self.thisdf.loc[self.model.current_per,:]
+
+     @property
+     def base(self):
+         ''' Returns basedf '''
+         return vis(model=self.model,df=self.model.basedf.loc[:,self.names],pat=self.__pat__)
+
+     @property
+     def pct(self):
+         '''Returns the pct change'''
+         return vis(model=self.model,df=self.thisdf.loc[:,self.names].pct_change(),pat=self.__pat__)
+
+     @property
+     def year_pct(self):
+         '''Returns the pct change over 4 periods (used for quarterly data) ''' 
+         return vis(model=self.model,df=self.thisdf.loc[:,self.names].pct_change(periods=4).loc[:,self.names],pat=self.__pat__)
+
+     @property
+     def frml(self):
+         '''Returns formulas '''
+         def getfrml(var,l):
+             if var in self.model.endogene:
+                 t=self.model.allvar[var]['frml'].replace('\n',' ').replace('  ',' ')
+                 return f'{var:<{l}} : {t}'
+             else: 
+                 return f'{var:{l}} : Exogenous'
+         mlength = max([len(v) for v in self.names]) 
+         out = '\n'.join(getfrml(var,mlength) for var in self.names)
+         print(out)
+          
+
+     @property
+     def dif(self):
+         ''' Returns the differens between the basedf and lastdf'''
+         difdf = self.thisdf-self.model.basedf.loc[:,self.names]
+         return vis(model=self.model,df=difdf,pat=self.__pat__)
+     @property
+     def difpct(self):
+         ''' Returns the differens between the pct changes in basedf and lastdf'''
+         difdf = self.thisdf.pct_change()-self.model.basedf.loc[:,self.names].pct_change()
+         return vis(model=self.model,df=difdf,pat=self.__pat__)
+     @property
+     def print(self):
+         ''' prints the current result'''
+         print('\n',self.thisdf.loc[self.model.current_per,self.names].to_string())
+         return 
+     
+     def __repr__(self):
+         return self.thisdf.loc[self.model.current_per,self.names].to_string() 
+     
+     def __mul__(self,other):
+         ''' Multiply the curent result with other '''
+         muldf = self.thisdf * other 
+         return vis(model=self.model,df=muldf,pat=self.__pat__)
+
+     def mul(self,other):
+         ''' Multiply the curent result with other '''
+         return self.__mul__(other)
+     
+     @property
+     def mul100(self):
+         '''Multiply the current result with 100 '''
+         return self.__mul__(100.0) 
+         
+class compvis() :
+     ''' Class to compare to runs in boxplots''' 
+     def __init__(self, model=None, pat=None):
+         ''' Combines basedf and lastdf to one tall dataframe useful for the Seaborn library''' 
+         self.model    = model
+         self.__pat__  = pat
+         self.names    = self.model.vlist(self.__pat__)
+         self.lastdf   = self.model.lastdf.loc[self.model.current_per,self.names] 
+         self.basedf   = self.model.basedf.loc[self.model.current_per,self.names]
+         self.lastmelt = melt(self.lastdf,source='Scenario') 
+         self.basemelt = melt(self.basedf ,source='Base') 
+         self.melted   = self.lastmelt.append(self.basemelt)
+         return
+     
+     def box(self,*args, **kwargs): 
+        '''Displays a boxplot'''
+        fig, ax = plt.subplots(figsize=(12,6))
+        ax = sns.boxplot(x='quarter',y='value',data=self.melted,hue='source',ax=ax)
+        ax.set_title(self.__pat__)
+     def swarm(self,*args, **kwargs): 
+        '''Displays a swarmplot '''
+        fig, ax = plt.subplots(figsize=(12,6))
+        ax = sns.swarmplot(x='quarter',y='value',data=self.melted,hue='source',ax=ax)
+        ax.set_title(self.__pat__)
+     def violin(self,*args, **kwargs):
+        '''Displays a violinplot''' 
+        fig, ax = plt.subplots(figsize=(12,6))
+        ax = sns.violinplot(x='quarter',y='value',data=self.melted,hue='source',ax=ax)
+        ax.set_title(self.__pat__)
+        
+   
+class  container():
+     '''A container, used if to izualize dataframes without a model'''
+      
+     def __init__(self,lastdf,basedf):
+        self.lastdf = lastdf
+        self.basedf = basedf
+        
+     def smpl(self,start='',slut='',df=None):
+        ''' Defines the model.current_per which is used for calculation period/index
+        when no parameters are issues the current current period is returned \n
+        Either none or all parameters have to be provided '''
+        if start =='' and slut == '':
+            pass
+        else:
+            istart,islut= self.lastdf.index.slice_locs(start,slut,kind='loc')
+            per=self.lastdf.index[istart:islut]
+            self.current_per =  per 
+        return self.current_per
+     def vlist(self,pat):
+        '''returns a list of variable matching the pattern'''
+        if isinstance(pat,list):
+               ipat=pat
+        else:
+               ipat = [pat]
+        out = [v for  p in ipat for v in sorted(fnmatch.filter(self.lastdf.columns,p.upper()))]  
+        return out    
+
+
+#%%  
+class varvis():
+     ''' Visualization class. used as a method on a model instance. 
+        
+        The purpose is to select variables acording to a pattern, potential with wildcards
+     '''
+     def __init__(self, model=None, var=''):
+         self.model = model
+         self.var = var
+         self.endo = self.model.allvar[var]['endo']
+
+     def explain(self,**kwargs):
+         x = self.model.explain(self.var,**kwargs)
+         return x
+     
+     def draw(self,**kwargs):
+         x = self.model.draw(self.var,**kwargs)
+         
+     def dekomp(self,**kwargs):
+         x = self.model.dekomp(self.var,**kwargs)
+         return x
+         
+     def _showall(self,all=1,dif=0,last=0):
+            if self.endo:
+                out1,out2 = '',''
+                out0   = f'Endogeneous: {self.var} \nFormular: {self.model.allvar[self.var]["frml"]}'
+                try:
+                    if all:
+                        out0 = out0+f'\nValues : \n{self.model.get_values(self.var)}\n' 
+                        out1 = f'\nInput last run: \n {self.model.get_eq_values(self.var)}\n\nInput base run: \n {self.model.get_eq_values(self.var,last=False)}\n'
+                    elif last:
+                        out0 = out0+f'\nValues : \n{self.model.get_values(self.var)}\n' 
+                        out1 = f'\nInput last run: \n {self.model.get_eq_values(self.var)}\n'
+                    if all or dif:            
+                        out2 = f'\nDifference: \n {self.model.get_eq_dif(self.var,filter=True)}'
+                except:
+                    pass 
+                out=out0+out1+out2
+            else: 
+                out   = f'Exogeneous : {self.var} \n Values : \n{self.model.get_values(self.var)}\n' 
+            return out
+
+     @property
+     def show(self):
+         out = self._showall(all=1)
+         print(out)
+         return 
+     
+     @property
+     def showdif(self):
+         out = self._showall(all=0,dif=1)
+         print(out)
+         return 
+
+     
+     def __repr__(self):
+             
+            return self._showall(all=0,last=1)
+
+        
+    
+
+def plotshow(df,name='',ppos=-1,kind='line',colrow=6,sharey=True,splitchar='__',**kwargs):
+    ''' Plots a subplot for each column in a datafra.
+    ppos determins which split by __ to use 
+    kind determins which kind of matplotlib chart to use '''  
+    out=df.pipe(lambda df_: df_.rename(columns={v: v.split(splitchar)[ppos] for v in df_.columns}))
+    number = out.shape[1] 
+    row=number//colrow+1
+    axes=out.plot(kind=kind,subplots=True,layout=(row,colrow),figsize = (10, row*2),
+                 use_index=True,title=name,sharey=sharey)
+    for ax in axes.flatten():
+        pass
+        ax.xaxis.set_minor_locator(plt.NullLocator())
+        ax.tick_params(axis='x', labelleft=True)
+    return axes
+    
+def melt(df,source='Latest'):
+    ''' melts a wide dataframe to a tall dataframe , appends a soruce column ''' 
+    melted = pd.melt(df.reset_index().rename(columns={'index':'quarter'}),id_vars='quarter').assign(source=source) 
+    return melted
+
+def heatshow(df,name='',cmap="Reds",mul=1.,annot=False,size=(11.69,8.27),dec=0,cbar=True,linewidths=.5):
+    ''' A heatmap of a dataframe ''' 
+    xx=(df.astype('float'))*mul 
+#    fig, ax = plt.subplots(figsize=(11,8))
+    fig, ax = plt.subplots(figsize=size)  #A4 
+    sns.heatmap(xx,cmap=cmap,ax=ax,fmt="."+str(dec)+"f",annot=annot,annot_kws ={"ha": 'center'},linewidths=linewidths,cbar=cbar)
+    ax.set_title(name, fontsize=20) 
+    
+    ax.set_yticklabels(ax.yaxis.get_majorticklabels(), ha = 'left',rotation=0)
+    yax = ax.get_yaxis()
+    pad = max(T.label.get_window_extent().width for T in yax.majorTicks)
+    yax.set_tick_params(pad=pad)
+    
+    ax.set_xticklabels(ax.xaxis.get_majorticklabels(), va = 'top' ,rotation=70.)
+    fig.subplots_adjust(bottom=0.15)
+    #ax.tick_paraOms(axis='y',direction='out', length=3, width=2, colors='b',labelleft=True)
+    return fig
+#%%
+def attshow(df,treshold=False,head=5000,tail=0,t=True,annot=False,showsum=False,sort=True,size=(11.69,8.27),title='',
+            tshow=True,dec=0,cbar=True,cmap='jet',save=''):
+    '''Shows heatmap of impacts of exogeneous variables
+    :df: Dataframe with impact 
+    :treshold: Take exogeneous variables with max impact of treshold or larger
+    :numhigh: take the numhigh largest impacts
+    :t: transpose the heatmap
+    :annot: Annotate the heatmap
+    :head: take the head largest 
+    .tail: take the tail smalest 
+    :showsum: Add a column with the sum 
+    :sort: Sort the data
+    .tshow: Show a longer title
+    :cbar:  if a colorbar shoud be displayes
+    :cmap: the colormap
+    :save: Save the chart (in png format) '''
+    
+    
+    selectmin = df.min().sort_values(ascending=False).tail(tail).index.tolist() 
+    selectmax = df.max().sort_values(ascending=False).head(head).index.tolist() 
+    select=selectmax+selectmin
+    yy      = df[select].pipe(
+                lambda df_ : df_[select] if sort else df_[sorted(list(df_.columns))])
+    if showsum:
+        asum= yy.sum(axis=1)
+        asum.name = '_Sum'
+        yy = pd.concat([yy,asum],axis=1)
+ 
+    yy2 = yy.T if t  else yy
+    if sort and tshow: 
+        txt= ' Impact from exogeneous variables. '+(
+         str(head)+' highest. ' if head >= 1 else '')+( str(tail)+' smallest. ' if tail >= 1 else '')
+    else:
+        txt= '' 
+    f=heatshow(yy2,cmap=cmap,name=title+txt ,annot=annot,mul=1.,size=size,dec=dec,cbar=cbar)
+    f.subplots_adjust(bottom=0.16) 
+    if save:
+        f.savefig(save+'.png')
+    return yy2
+
+
+
+def attshowone(df,name,pre='',head=5,tail=5):
+    ''' shows the contribution to row=name from each column 
+    the coulumns can optional be selected as starting with pre'''
+    
+    res = df.loc[name,[n for n in df.columns if n.startswith(pre)]].sort_values(ascending=False).pipe(
+                   lambda df_: df_.head(head).append(df_.tail(tail)))
+    ax =  res.plot(kind='bar')
+    txt= ( str(head)+' highest. ' if head >= 1 else '')+( str(tail)+' smallest. ' if tail >= 1 else '')
+    ax.set_title('Contributions to '+name+'.   '+txt)
+    return ax
+
+if __name__ == '__main__' and 0:
+    pass
+    if  ( not 'mstotal' in locals() ) or True:
+        base    = pd.read_pickle(r'data\base.pc')    
+        adverse = pd.read_pickle(r'data\adverse.pc')
+        
+    # get the model  
+        with open(r"models\mtotal.fru", "r") as text_file:
+            ftotal = text_file.read() 
+            mstotal = mc.model()
+        mstotal.basedf = base
+        mstotal.lastdf = adverse
+        mstotal.smpl('2016q1','2018q4',base)
+            
+    
+                
+    a=vis(mstotal,'PD__FF_HH_H*').dif.plot(kind='line',title='test2')
+    b=vis(mstotal,'rcet1__de*').dif.mul100.heat(cbar=0)
+    b=mstotal.compvis('PD__FF_HH_H*').box()
+    b=mstotal.vis('PD__FF_HH_H*').violin()
