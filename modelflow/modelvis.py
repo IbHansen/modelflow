@@ -133,6 +133,11 @@ class vis():
          ''' Multiply the curent result with other '''
          muldf = self.thisdf * other 
          return vis(model=self.model,df=muldf,pat=self.__pat__)
+     
+     def rename(self,other):
+         ''' rename columns '''
+         muldf = self.thisdf.rename(columns=other) 
+         return vis(model=self.model,df=muldf,pat=self.__pat__)
 
      def mul(self,other):
          ''' Multiply the curent result with other '''
