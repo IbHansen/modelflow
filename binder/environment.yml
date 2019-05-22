@@ -15,4 +15,3 @@ dependencies:
   - jupyter_nbextensions_configurator
   - rise
   - qgrid
-  - rpy2
