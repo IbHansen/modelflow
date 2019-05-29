@@ -1490,7 +1490,7 @@ class model(BaseModel):
         
         def getpw(v):
             try:
-               return max(0.5,abs(g[v.child][v.parent]['att'].iloc[0,-1])/20.)
+               return max(0.5,min(5.,abs(g[v.child][v.parent]['att'].iloc[0,-1])/20.))
             except:
                return 0.5
            
