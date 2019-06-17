@@ -19,6 +19,7 @@ from IPython.display import SVG, display, Image
 import inspect 
 from itertools import chain, zip_longest
 from numba import jit
+import itertools
 
 import sys  
 import time
@@ -68,7 +69,16 @@ class newmodel(model):
         
             return outdf
 
+  
+    @property 
+    def showstartnr(self):
+        self.findpos()
+        variabler=[x for x in sorted(self.allvar.keys())]
+        return {v:self.allvar[v]['startnr'] for v in variabler}
+
         
+        
+       
     def sim2d(self, databank, start='', slut='', silent=0,samedata=0,alfa=1.0,stats=False,first_test=1,
               antal=1,conv=[],absconv=0.01,relconv=0.00001,
               dumpvar=[],ldumpvar=False,dumpwith=15,dumpdecimal=5,chunk=1_000_000,ljit=False, 
@@ -371,11 +381,12 @@ class newmodel(model):
                     if not hasattr(self,'solve1d'): 
                         self.make_los_text1d =  self.outsolve1dcunk(chunk=chunk,ljit=ljit, debug=kwargs.get('debug',1))
                         exec(self.make_los_text1d,globals())  # creates the los function
-                        self.pro1d,self.solve1d,self.epi1d  = make_los(self.funks,self.errfunk)
+                        self.pro1d,self.solve1d,self.epi1d  = make_los(self.funks,self.errfunk1d)
  
                     this_pro1d,this_solve1d,this_epi1d = self.pro1d,self.solve1d,self.epi1d                
 
         values=databank.values.copy()
+        self.values_ = values # for use in errdump 
               
         self.genrcolumns = databank.columns.copy()  
         self.genrindex   = databank.index.copy()  
@@ -400,6 +411,7 @@ class newmodel(model):
                 print(f'Fair-Taylor iteration: {fairiteration}')
             for self.periode in sol_periode:
                 row=databank.index.get_loc(self.periode)
+                self.row_ = row
                 a=self.stuff3(values,row,ljit)
 #                  
                 if ldumpvar:
@@ -442,6 +454,7 @@ class newmodel(model):
             if fairantal<=2 : self.dumpdf.drop('fair',axis=1,inplace=True)
             
         outdf =  pd.DataFrame(values,index=databank.index,columns=databank.columns)  
+        del self.values_ # not needed any more 
         
         if stats:
             numberfloats = self.calculate_freq[-1][1]*ittotal
@@ -488,7 +501,7 @@ class newmodel(model):
             
             if ljit:
                 fib1.append((short+'print("'+f"Compiling chunk {chunknumber}     "+'",time.strftime("%H:%M:%S")) \n') if ljit else '')
-                fib1.append(short+'@jit("(f8[:],f8)",fastmath=True)\n')
+                fib1.append(short+'@jit("(f8[:],f8)",fastmath=True,cache=False)\n')
             fib1.append(short + 'def '+name+'(a,alfa=1.0):\n')
 #            fib1.append(long + 'outvalues = values \n')
             if debug:
@@ -525,7 +538,7 @@ class newmodel(model):
                 neweqs = eques
             if ljit:
                 fib2.append((short+'print("'+f"Compiling a mastersolver     "+'",time.strftime("%H:%M:%S")) \n') if ljit else '')
-                fib2.append(short+'@jit("(f8[:],f8)",fastmath=True)\n')
+                fib2.append(short+'@jit("(f8[:],f8)",fastmath=True,cache=False)\n')
                  
             fib2.append(short + 'def '+name+'(a,alfa=1.0):\n')
 #            fib2.append(long + 'outvalues = values \n')
@@ -580,6 +593,10 @@ class newmodel(model):
         res = ''.join(out)
         return res
   
+    def errfunk1d(self,a,linenr,overhead=4,overeq=0):
+        ''' Handle errors in sim1d '''
+        self.saveeval3(self.values_,self.row_,a)
+        self.errfunk(self.values_,linenr,overhead,overeq)
     
     def errfunk(self,values,linenr,overhead=4,overeq=0):
         ''' developement function
@@ -605,9 +622,10 @@ class newmodel(model):
         print('A snapshot of the data at the error point is at .errdump ')
         print('Also the .lastdf contains .errdump,  for inspecting ')
         self.print_eq_values(errvar,self.errdump,per=[self.periode])
-        self.dumpdf= pd.DataFrame(self.dumplist)
-        del self.dumplist
-        self.dumpdf.columns= ['fair','per','iteration']+self.dump
+        if hasattr(self,'dumplist'):
+            self.dumpdf= pd.DataFrame(self.dumplist)
+            del self.dumplist
+            self.dumpdf.columns= ['fair','per','iteration']+self.dump
 
     pass
 
@@ -627,11 +645,11 @@ if __name__ == '__main__':
         df3 = pd.DataFrame({'Z':[1., 22., 33,43] , 'TY':[10.,20.,30.,40.] ,'YD':[10.,20.,30.,40.]},index=[2017,2018,2019,2020])
         df4 = pd.DataFrame({'Z':[ 223., 333] , 'TY':[203.,303.] },index=[2018,2019])
         ftest = ''' 
-        FRMl <>  ii = x+z+log(1) $
+        FRMl <>  ii = x+z(-1)+log(1) $
         frml <>  c=0.8*yd+log(1) $
         FRMl <z>  i = ii+iy +log(1) $ 
         FRMl <>  x = f(2) $ 
-        FRMl <>  y = c + i + x+ i(-1)+log(1)$ 
+        FRMl <>  y = c(-1) + i + x+ i(-1)+log(-1)$ 
         FRMl <>  yX =  1.0*y(+1) $
         FRML <>  dogplace = y *4 $'''
         
@@ -647,7 +665,7 @@ if __name__ == '__main__':
 #           print(m2.make_los_text2d)
             #%%
             m2.use_preorder=0
-            dfr1=m2(df2,antal=10,fairantal=1,debug=1,conv='Y',ldumpvar=1,dumpvar=['C','Y'],stats=True,ljit=0)
+            dfr1=m2(df2,antal=10,fairantal=1,debug=1,conv='Y',ldumpvar=1,dumpvar=['C','Y'],stats=True,ljit=1)
 #%%            
             m2.Y.explain(select=True,showatt=True,HR=False,up=1)
     #        g  = m2.ximpact('Y',select=True,showatt=True,lag=True,pdf=0)

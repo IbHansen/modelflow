@@ -26,6 +26,7 @@ from subprocess import run
 import webbrowser as wb
 import importlib
 import gc
+import copy 
 
 
 
@@ -226,8 +227,13 @@ class BaseModel():
             istart,islut= df_.index.slice_locs(start,slut,kind='loc')
             per=df_.index[istart:islut]
             self.current_per =  per 
+        self.old_current_per = copy.deepcopy(self.current_per)
         return self.current_per
 
+    @property
+    def reset_smpl():
+        '''Reset the smpl to previous value''' 
+        self.current_per = self.old_current_per
 
     @property
     def endograph(self) :
@@ -341,6 +347,7 @@ class BaseModel():
  
         sol_periode = self.smpl(start,slut,databank)
         if self.maxlag and not (self.current_per[0]+self.maxlag) in databank.index :
+#        if self.maxlag and not (self.current_per[0]+self.maxlag) in databank.index :
             print('***** Warning: You are solving the model before all lags are avaiable')
             print('Maxlag:',self.maxlag,'First solveperiod:',self.current_per[0],'First dataframe index',databank.index[0])
             sys.exit()     
@@ -724,14 +731,17 @@ class model(BaseModel):
     def vlist(self,pat):
         '''returns a list of variable in the model matching the pattern, the pattern can be a list of patterns'''
         if isinstance(pat,list):
-               ipat=pat
+               upat=pat
         else:
-               ipat = [pat]
+               upat = [pat]
+               
+        ipat = upat
+            
         try:       
-            out = [v for  p in ipat for v in sorted(fnmatch.filter(self.allvar.keys(),p.upper()))]  
+            out = [v for  p in ipat for up in p.split() for v in sorted(fnmatch.filter(self.allvar.keys(),up.upper()))]  
         except:
             ''' in case the model instance is an empty instance around datatframes, typical for visualization'''
-            out = [v for  p in ipat for v in sorted(fnmatch.filter(self.lastdf.columns,p.upper()))]  
+            out = [v for  p in ipat for up in p.split() for v in sorted(fnmatch.filter(self.lastdf.columns,up.upper()))]  
         return out
     
     
@@ -833,8 +843,7 @@ class model(BaseModel):
         return 'Equations with feedback in this model:\n'+out
     
     def superblock(self):
-        """ returns a set with names of endogenopus variables which do not depend 
-        on current endogenous variables """
+        """ finds prolog, core and epilog variables """
 
         if not hasattr(self,'_prevar'):
             self._prevar = []
@@ -1073,10 +1082,10 @@ class model(BaseModel):
         return xxxx 
 
     
-    def get_att_pct(self,n,filter = True,lag=True):
+    def get_att_pct(self,n,filter = True,lag=True,start='',end=''):
         ''' det attribution pct for a variable.
          I little effort to change from multiindex to single node name''' 
-        res = self.dekomp(n,lprint=0)
+        res = self.dekomp(n,lprint=0,start=start,end=end)
         res_pct = res[2].iloc[:-2,:]
         if lag:
             out_pct = pd.DataFrame(res_pct.values,columns=res_pct.columns,
@@ -1113,7 +1122,7 @@ class model(BaseModel):
             if nolag: 
                 sterms = sorted({(v,0) for v,l in sterms})
             if showvar: sterms = [(varnavn,0)]+sterms    
-            lines = [[df.loc[p+lag,v] for p in current_per] for v,lag in sterms]
+            lines = [[get_a_value(df,p,v,lag) for p in current_per] for v,lag in sterms]
             out = pd.DataFrame(lines,columns=current_per,
                    index=[r[0]+(f'({str(r[1])})' if  r[1] else '') for r in sterms])
             return out
@@ -1155,7 +1164,8 @@ class model(BaseModel):
             
     def get_eq_dif(self,varnavn,filter=False,nolag=False,showvar=False) :
         ''' returns a dataframe with difference of values from formula'''
-        out0 =  self.get_eq_values(varnavn,last=True,nolag=nolag,showvar=showvar)-self.get_eq_values(varnavn,last=False,nolag=nolag,showvar=showvar)
+        out0 =  (self.get_eq_values(varnavn,last=True,nolag=nolag,showvar=showvar)-
+                 self.get_eq_values(varnavn,last=False,nolag=nolag,showvar=showvar))
         if filter:
             mask = out0.abs()>=0.00000001
             out = out0.loc[mask] 
@@ -1169,9 +1179,9 @@ class model(BaseModel):
         t = pt.udtryk_parse(v,funks=[])
         var=t[0].var
         lag=int(t[0].lag) if t[0].lag else 0
-        bvalues = [float(self.basedf.loc[per+lag,var]) for per in self.current_per] 
-        lvalues = [float(self.lastdf.loc[per+lag,var]) for per in self.current_per] 
-        dvalues = [float(self.lastdf.loc[per+lag,var]-self.basedf.loc[per+lag,var]) for per in self.current_per] 
+        bvalues = [float(get_a_value(self.basedf,per,var,lag)) for per in self.current_per] 
+        lvalues = [float(get_a_value(self.lastdf,per,var,lag)) for per in self.current_per] 
+        dvalues = [float(get_a_value(self.lastdf,per,var,lag)-get_a_value(self.basedf,per,var,lag)) for per in self.current_per] 
         df = pd.DataFrame([bvalues,lvalues,dvalues],index=['Base','Last','Diff'],columns=self.current_per)
         return df 
     
@@ -1227,10 +1237,13 @@ class model(BaseModel):
         smallbase    = basedf_.loc[:,vars].copy(deep=True)  # for speed 
         alldf        = {e: smallalt.copy()   for e in eksperiments}       # make a dataframe for each experiment
         for  e in eksperiments:
-              alldf[e].loc[e[1]+e[0][1],e[0][0]] = smallbase.loc[e[1]+e[0][1],e[0][0]] # update the variable in each eksperiment
+              (var_,lag_),per_ = e 
+              set_a_value(alldf[e],per_,var_,lag_,get_a_value(smallbase,per_,var_,lag_))
+#              alldf[e].loc[e[1]+e[0][1],e[0][0]] = smallbase.loc[e[1]+e[0][1],e[0][0]] # update the variable in each eksperiment
           
         difdf        = {e: smallalt - alldf[e] for e in eksperiments }           # to inspect the updates     
-        allres       = {e : mfrml.xgenr(alldf[e],str(e[1]),str(e[1]),silent= True ) for e in eksperiments} # now evaluate each experiment
+        #allres       = {e : mfrml.xgenr(alldf[e],str(e[1]),str(e[1]),silent= True ) for e in eksperiments} # now evaluate each experiment
+        allres       = {e : mfrml.xgenr(alldf[e],e[1],e[1],silent= True ) for e in eksperiments} # now evaluate each experiment
         diffres      = {e: smallalt - allres[e] for e in eksperiments }          # dataframes with the effect of each update 
         res          = {e : diffres[e].loc[e[1],varnavn]  for e in eksperiments}          # we are only interested in the efect on the left hand variable 
     # the resulting dataframe 
@@ -1260,8 +1273,8 @@ class model(BaseModel):
             print(pctendo.to_string(float_format=lambda x:'{0:10.0f}%'.format(x) ))
     
         pctendo=pctendo[pctendo.columns].astype(float)    
-        return res2df,resdf,pctendo      
-
+        return res2df,resdf,pctendo
+      
     def treewalk(self,g,navn, level = 0,parent='Start',maxlevel=20,lpre=True):
         ''' Traverse the call tree from name, and returns a generator \n
         to get a list just write: list(treewalk(...)) 
@@ -1401,7 +1414,7 @@ class model(BaseModel):
     #        print(nodelist)
     #        print(nodestodekomp)
             with ttimer('Dekomp',debug) as t: 
-                pctdic2 = {n : self.get_att_pct(n,lag=lag) for n in nodestodekomp }
+                pctdic2 = {n : self.get_att_pct(n,lag=lag,start=start,end=end) for n in nodestodekomp }
             edges = {(r,n):{'att':df.loc[[r],:]} for n,df in pctdic2.items() for r in df.index}
             self.localgraph  = nx.DiGraph()
             self.localgraph.add_edges_from([(v.child,v.parent) for v in edgelist])
@@ -1418,7 +1431,7 @@ class model(BaseModel):
         else:     
             self.newgraph = nx.DiGraph([(var,var)])
             nx.set_node_attributes(self.newgraph,{var:{'values':self.get_values(var)}})
-            nx.set_node_attributes(self.newgraph,{var:{'att':self.get_att_pct(var,lag=lag)}})
+            nx.set_node_attributes(self.newgraph,{var:{'att':self.get_att_pct(var,lag=lag,start=start,end=end)}})
         self.gdraw(self.newgraph,navn=var,showatt=showatt,**kwargs)
         return self.newgraph
 
@@ -1623,9 +1636,9 @@ class model(BaseModel):
                     var=t[0].var
                     lag=int(t[0].lag) if t[0].lag else 0
                     dec = kwargs.get('dec',3)
-                    bvalues = [float(self.basedf.loc[per+lag,var]) for per in self.current_per] if kwargs.get('all',False)  else 0
-                    lvalues = [float(self.lastdf.loc[per+lag,var]) for per in self.current_per] if kwargs.get('last',False) or kwargs.get('all',False)  else 0
-                    dvalues = [float(self.lastdf.loc[per+lag,var]-self.basedf.loc[per+lag,var]) for per in self.current_per] if kwargs.get('all',False) else 0 
+                    bvalues = [float(get_a_value(self.basedf,per,var,lag)) for per in self.current_per] if kwargs.get('all',False)  else 0
+                    lvalues = [float(get_a_value(self.lastdf,per,var,lag)) for per in self.current_per] if kwargs.get('last',False) or kwargs.get('all',False)  else 0
+                    dvalues = [float(get_a_value(self.lastdf,per,var,lag)-get_a_value(self.basedf,per,var,lag)) for per in self.current_per] if kwargs.get('all',False) else 0 
                     per   = "<TR><TD ALIGN='LEFT'>Per</TD>"+''.join([ '<TD>'+(f'{p}'.strip()+'</TD>').strip() for p in self.current_per])+'</TR>'  
                     base   = "<TR><TD ALIGN='LEFT'>Base</TD>"+''.join([ "<TD ALIGN='RIGHT'>"+(f'{b:{25},.{dec}f}'.strip()+'</TD>').strip() for b in bvalues])+'</TR>' if kwargs.get('all',False) else ''    
                     last   = "<TR><TD ALIGN='LEFT'>Last</TD>"+''.join([ "<TD ALIGN='RIGHT'>"+(f'{b:{25},.{dec}f}'.strip()+'</TD>').strip() for b in lvalues])+'</TR>' if kwargs.get('last',False) or kwargs.get('all',False) else ''    
@@ -1659,7 +1672,6 @@ class model(BaseModel):
                 clusterout = clusterout + f'\n subgraph cluster{i} {{ {varincluster} ; label = "{c}" ; color=lightblue ; style = filled ;fontcolor = yellow}}'     
             
         fname = kwargs.get('saveas',navn if navn else "A_model_graph")  
-                  
         ptitle = '\n label = "'+kwargs.get('title',fname)+'";'
         post  = '\n}' 
 
@@ -1740,6 +1752,27 @@ class model(BaseModel):
                 'model; \n  ' + '  '.join(content).replace('**','^') + ' \n end; \n' )
         
         return out
+    
+    def itershow(self,per=''):
+            ''' dunmps iterations ''' 
+            model = self
+        #try:
+            per_ = model.current_per[-1] if per == '' else per  
+            indf = model.dumpdf.query('per == @per_')     
+            out= indf.query('per == @per_').set_index('iteration',drop=True).drop('per',axis=1).copy()
+            vars = [v for  v in out.columns if v in model.endogene]  
+            number = out.shape[1] 
+            #print(vars)
+            #print(out.head())
+            axes=out[vars].plot(kind='line',subplots=True,layout=(number,1),figsize = (10, number*3),
+                 use_index=True,title=f'Iterations in {per_} ',sharey=0)
+            fig = axes.flatten()[0].get_figure()
+            fig.tight_layout()
+            fig.subplots_adjust(top=0.97)
+            return fig
+        #except:
+            print('No iteration dump' )
+
        
 def create_strong_network(g,name='Network',typeout=False,show=False):
     ''' create a solveorder and   blockordering of af graph 
@@ -1800,9 +1833,21 @@ def create_model(navn, hist=0, name='',new=True,finished=False,xmodel=model,stra
         return xmodel(udrullet, shortname,straight=straight,funks=funks), xmodel(hmodel, shortname + '_hist',straight=straight,funks=funks)
     else:
         return xmodel(udrullet, shortname,straight=straight,funks=funks)
+#%%
+def get_a_value(df,per,var,lag=0):
+    ''' returns a value for row=p+lag, column = var 
+    
+    to take care of non additive row index'''
+    
+    return df.iat[df.index.get_loc(per)+lag,df.columns.get_loc(var)]
 
-
-
+def set_a_value(df,per,var,lag=0,value=np.nan):
+    ''' Sets a value for row=p+lag, column = var 
+    
+    to take care of non additive row index'''
+    
+    df.iat[df.index.get_loc(per)+lag,df.columns.get_loc(var)]=value
+#%%                   
 def insertModelVar(dataframe, model=None):
     """Inserts all variables from model, not already in the dataframe.
     Model can be a list of models """ 
@@ -1984,12 +2029,14 @@ if __name__ == '__main__' :
                              for i in range(numberlines)]))
         yy=m2test(df)
         yy=m2test(df2)
-        m2test.drawmodel(invisible={'A2'})
-        m2test.drawmodel(cluster = {'test1':['horse','A0','A1'],'test2':['YY','D0']},sink='D2')
-        m2test.drawendo(last=1,size=(2,2))
-        m2test.drawmodel(all=1,browser=0,lag=0,dec=4,HR=0,title='test2',invisible={'A2'},labels={'A0':'This is a test'})
-        print(m2test.equations.replace('$','\n'))
-        print(m2test.todynare(paravars=['HORSE','C'],paravalues=['C=33','HORSE=42']))
+        m2test.A1.showdif
+        if 0:
+            m2test.drawmodel(invisible={'A2'})
+            m2test.drawmodel(cluster = {'test1':['horse','A0','A1'],'test2':['YY','D0']},sink='D2')
+            m2test.drawendo(last=1,size=(2,2))
+            m2test.drawmodel(all=1,browser=0,lag=0,dec=4,HR=0,title='test2',invisible={'A2'},labels={'A0':'This is a test'})
+            print(m2test.equations.replace('$','\n'))
+            print(m2test.todynare(paravars=['HORSE','C'],paravalues=['C=33','HORSE=42']))
 #%%        
 #        m2test.drawmodel(transdic={'D[0-9]':'DDD'},last=1,browser=1)
 #        m2test.drawmodel(transdic={'D[0-9]':'DDD'},lag=False)

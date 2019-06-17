@@ -48,7 +48,20 @@ class vis():
          else:
              self.thisdf = self.model.lastdf.loc[:,self.names] 
          return
+
+     def explain(self,**kwargs):
+         for var in self.names:
+             x = self.model.explain(var,**kwargs)
+         return 
      
+     def draw(self,**kwargs):
+         for var in self.names:
+             x = self.model.draw(var,**kwargs)
+         
+     def dekomp(self,**kwargs):
+         for var in self.names:
+             x = self.model.dekomp(var,**kwargs)
+    
      def heat(self,*args, **kwargs):
          ''' Displays a heatmap of the resulting dataframe'''
          
@@ -63,6 +76,14 @@ class vis():
          name = kwargs.get('title','Title')
          a = plotshow(self.thisdf.loc[self.model.current_per,:],
                       name=name,*args,**kwargs)
+         return a 
+     def plot_alt(self,*args, **kwargs):
+         ''' Displays a plot for each of the columns in the resulting dataframe '''
+         
+         title = kwargs.get('title','Title')
+         a = vis_alt(self.model.basedf.loc[self.model.current_per,self.names],
+                     self.model.lastdf.loc[self.model.current_per,self.names],
+                      title=title,*args,**kwargs)
          return a 
      
      def box(self):
@@ -241,8 +262,9 @@ class varvis():
                         out0 = out0+f'\nValues : \n{self.model.get_values(self.var)}\n' 
                         out1 = f'\nInput last run: \n {self.model.get_eq_values(self.var)}\n'
                     if all or dif:            
-                        out2 = f'\nDifference: \n {self.model.get_eq_dif(self.var,filter=True)}'
-                except:
+                        out2 = f'\nDifference: \n {self.model.get_eq_dif(self.var,filter=False)}'
+                except Exception as e:
+                    print(e)
                     pass 
                 out=out0+out1+out2
             else: 
@@ -267,6 +289,23 @@ class varvis():
             return self._showall(all=0,last=1)
 
         
+def vis_alt(grund,mul,title='Show variables'):
+    ''' Graph of one of more variables each variable is displayed for 3 banks'''
+    avar = grund.columns
+    antal=len(avar)
+    fig, axes = plt.subplots(nrows=antal, ncols=1,figsize=(15,antal*6))  #,sharex='col' ,sharey='row')
+    fig.suptitle(title, fontsize=20)
+    ax2 = [axes] if antal == 1 else axes
+    for i,(var,ax) in enumerate(zip(avar,ax2)):
+        grunddata = grund.loc[:,var]
+        muldata = mul.loc[:,var]
+        grunddata.plot(ax=ax,legend=False,fontsize=14)
+        muldata.plot (ax=ax,legend=False,fontsize=14)
+        ax.set_title(var,fontsize=14)
+        x_pos = grunddata.index[-1]
+        ax.text(x_pos, grunddata.values[-1],'Baseline',fontsize=14)
+        ax.text(x_pos, muldata.values[-1]  ,'Alternative',fontsize=14)
+    return fig
     
 
 def plotshow(df,name='',ppos=-1,kind='line',colrow=6,sharey=True,splitchar='__',**kwargs):
@@ -282,6 +321,10 @@ def plotshow(df,name='',ppos=-1,kind='line',colrow=6,sharey=True,splitchar='__',
         pass
         ax.xaxis.set_minor_locator(plt.NullLocator())
         ax.tick_params(axis='x', labelleft=True)
+#    fig = axes.flatten()[0].get_figure()
+#    fig.tight_layout()
+#    fig.subplots_adjust(top=0.96)
+    
     return axes
     
 def melt(df,source='Latest'):
