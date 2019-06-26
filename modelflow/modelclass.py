@@ -139,7 +139,8 @@ class BaseModel():
 #                            'startnr'    : 0,
                             'endo'       : 0} for name in {t.var for t in termswithvar} }
 
-        self.aequalterm = ('','','=','','')     # this is how a term with = looks like 
+        #self.aequalterm = ('','','=','','')     # this is how a term with = looks like 
+        self.aequalterm = ('','=','','')     # this is how a term with = looks like 
         for frmlnumber,((frml,fr,n,udtryk),nt) in enumerate(mega):
             assigpos = nt.index(self.aequalterm)                       # find the position of = 
             zendovar   = [t.var for t in nt[:assigpos] if t.var]  # variables to the left of the =

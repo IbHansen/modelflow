@@ -60,7 +60,8 @@ splitpat    = namepat + ws + \
 # for splitting a model in commands and values
 statementpat =  commentpat + '|' + namepat + ws2 + upat
 
-udtrykpat    =  commentpat + '|' + numpat + '|' + oppat + '|' + namepat + lagpat
+#udtrykpat    =  commentpat + '|' + numpat + '|' + oppat + '|' + namepat + lagpat
+udtrykpat    =   numpat + '|' + oppat + '|' + namepat + lagpat
 
 udtrykre_old     =  re.compile(udtrykpat)
 #%%
@@ -72,7 +73,8 @@ def udtrykre(funks=[]):
     funkname2   = [i+r'(?=\()' for i in funkname]               # a function is followed by a (
     opname      = r'\*\*  != >=  <=  ==  [=+-/*@|()$><,.\]\[]'.split() # list of ordinary operators 
     oppat       = '('+'|'.join(['(?:' + i + ')' for i in funkname2+opname])+')'
-    udtrykpat    =  commentpat + '|' + numpat + '|' + oppat + '|' + namepat + lagpat
+   # udtrykpat    =  commentpat + '|' + numpat + '|' + oppat + '|' + namepat + lagpat
+    udtrykpat    =   numpat + '|' + oppat + '|' + namepat + lagpat
     return re.compile(udtrykpat)
 
 #udtrykpatnew([f1,f2])
@@ -123,8 +125,7 @@ def model_parse(equations,funks=[]):
      The purpose of this function is to make model analysis faster. this is 20 times faster than looping over espressions in a model
      '''
     fatoms = namedtuple('fatoms', 'whole, frml ,frmlname, expression')
-    nterm = namedtuple('nterm', ['comment', 'number', 'op', 'var', 'lag'])
-#    ibh = [(fatoms(*c),[nterm(*t) for t in udtrykre.findall(c[3])])  for c in (split_frml(f)  for f in find_frml(equations.upper()) )]
+    nterm = namedtuple('nterm', [ 'number', 'op', 'var', 'lag'])
     expressionre= udtrykre(funks)
     ibh = [(fatoms(*c),[nterm(*t) for t in expressionre.findall(c[3])])  for c in (split_frml(f)  for f in find_frml(equations.upper()) )]
     return ibh
@@ -172,7 +173,8 @@ def check_syntax_model(equations,test=True):
 def udtryk_parse(udtryk,funks=[]):
     '''returns a list of terms from an expression ie: lhs=rhs $ 
     or just an expression like x+b '''
-    nterm = namedtuple('nterm', ['comment', 'number', 'op', 'var', 'lag'])
+    #nterm = namedtuple('nterm', ['comment', 'number', 'op', 'var', 'lag'])
+    nterm = namedtuple('nterm', ['number', 'op', 'var', 'lag'])
     temp=re.sub(r'\s+', '', udtryk.upper()) # remove all blanks 
     xxx = udtrykre(funks=funks).findall(temp) # the compiled re pattern is importet from pattern 
  # her laver vi det til en named tuple

@@ -54,14 +54,20 @@ class newmodel(model):
     
             
             '''
+            if hasattr(self,'oldkwargs'):
+                newkwargs =  {**self.oldkwargs,**kwargs}
+            else:
+                newkwargs =  kwargs
+            self.oldkwargs = newkwargs 
+                
             if self.save:
                 if self.previousbase and hasattr(self,'lastdf'):
                     self.basedf = self.lastdf.copy(deep=True)
                 
             if kwargs.get('sim2',False):
-                outdf = self.sim2d(*args, **kwargs )   
+                outdf = self.sim2d(*args, **newkwargs )   
             else: 
-                outdf = self.sim1d( *args, **kwargs) 
+                outdf = self.sim1d( *args, **newkwargs) 
     
             if self.save:
                 if (not hasattr(self,'basedf')) or kwargs.get('setbase',False) : self.basedf = outdf.copy(deep=True) 
@@ -74,9 +80,7 @@ class newmodel(model):
     def showstartnr(self):
         self.findpos()
         variabler=[x for x in sorted(self.allvar.keys())]
-        return {v:self.allvar[v]['startnr'] for v in variabler}
-
-        
+        return {v:self.allvar[v]['startnr'] for v in variabler}        
         
        
     def sim2d(self, databank, start='', slut='', silent=0,samedata=0,alfa=1.0,stats=False,first_test=1,
@@ -659,7 +663,7 @@ if __name__ == '__main__':
 #            m2(df)
             df2=insertModelVar(df2,m2)
             cc = m2.outsolve2dcunk(df2)
-            dfr1=m2.sim1d(df2,antal=10,fairantal=1,debug=1,conv='Y',ldumpvar=0,dumpvar=['C','Y'],stats=False,ljit=0,chunk=2)
+            dfr1=m2(df2,antal=10,fairantal=1,debug=1,conv='Y',ldumpvar=0,dumpvar=['C','Y'],stats=False,ljit=0,chunk=2)
             dd = m2.make_los_text1d
             assert 1==1
 #           print(m2.make_los_text2d)

@@ -137,10 +137,17 @@ class vis():
          difdf = self.thisdf-self.model.basedf.loc[:,self.names]
          return vis(model=self.model,df=difdf,pat=self.__pat__)
      @property
-     def difpct(self):
+     def difpctgrowth(self):
          ''' Returns the differens between the pct changes in basedf and lastdf'''
          difdf = self.thisdf.pct_change()-self.model.basedf.loc[:,self.names].pct_change()
          return vis(model=self.model,df=difdf,pat=self.__pat__)
+
+     @property
+     def difpct(self):
+         ''' Returns the differens in pct between basedf and lastdf'''
+         difdf = (self.thisdf/self.model.basedf.loc[:,self.names]-1.)*100.
+         return vis(model=self.model,df=difdf,pat=self.__pat__)
+
      @property
      def print(self):
          ''' prints the current result'''

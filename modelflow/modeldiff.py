@@ -285,13 +285,13 @@ def calculate_endocurmat(model,df,per):
     return df
     
 
-def calculate_allmat(model,df,per):
+def calculate_allmat(model,df,per,show=False):
     ''' Calculate and return a dictionary with a matrix of derivative values for each lag''' 
-    with mc.ttimer('Finding derivatives') as t: 
+    with mc.ttimer('Finding derivatives',show) as t: 
         _ = modeldiff(model,silent=True)
-    with mc.ttimer('Calculating derivatives') as t: 
+    with mc.ttimer('Calculating derivatives',show) as t: 
         res = calculate_diffvalue(model,df,per)
-    with mc.ttimer('creating dataframe') as t: 
+    with mc.ttimer('creating dataframe',show) as t: 
         res2 = calculate_diffvalue_d3d(model)
     return {l:calculate_mat(model,l) for l in range(0,model.maxlag-1,-1)}
 
@@ -422,7 +422,7 @@ def get_AINV(A):
     return out
 
 
-def get_compagnion(model,df,per) :
+def get_compagnion(model,df,per,show=False) :
     
     A = get_A(model,df,per)
     AINV=get_AINV(A)  
