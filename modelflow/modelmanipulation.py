@@ -732,6 +732,13 @@ def lagone(ind,funks=[]):
         fib.append(ud)
     return ''.join(fib)
 
+def lag_n(udtryk,n=1,funks=[]):
+    new=udtryk
+    for i in range(n):
+        new=lagone(new,funks=funks)
+    return f'({new})'
+lag_n('a+b',n=0)
+
 #%% 
 def pastestring(ind,post,funks=[]):
     ''' All variable names in a  in a string **ind** is pasted with the string **post** 

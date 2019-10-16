@@ -17,7 +17,7 @@ try:
     from model_cvx import mv_opt, mv_opt_prop
     classfunk = ['TRANS']    # names a classfunk which can be called 
 except:
-    print('Pyfs info: CVXopt not installed')
+    print('ModelFlow info: CVXopt not installed. Only matters if you are incorporating optimization')
     pass
 
 def sum_excel(*arg):

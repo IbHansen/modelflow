@@ -64,6 +64,8 @@ statementpat =  commentpat + '|' + namepat + ws2 + upat
 udtrykpat    =   numpat + '|' + oppat + '|' + namepat + lagpat
 
 udtrykre_old     =  re.compile(udtrykpat)
+nterm = namedtuple('nterm', ['number', 'op', 'var', 'lag'])
+
 #%%
 def udtrykre(funks=[]):
     global funkname
@@ -174,7 +176,6 @@ def udtryk_parse(udtryk,funks=[]):
     '''returns a list of terms from an expression ie: lhs=rhs $ 
     or just an expression like x+b '''
     #nterm = namedtuple('nterm', ['comment', 'number', 'op', 'var', 'lag'])
-    nterm = namedtuple('nterm', ['number', 'op', 'var', 'lag'])
     temp=re.sub(r'\s+', '', udtryk.upper()) # remove all blanks 
     xxx = udtrykre(funks=funks).findall(temp) # the compiled re pattern is importet from pattern 
  # her laver vi det til en named tuple

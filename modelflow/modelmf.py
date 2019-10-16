@@ -147,6 +147,29 @@ class mfupdate():
     def __call__(self,df):
         return self.second(df)
     
+@pd.api.extensions.register_dataframe_accessor("ibloc")
+class ibloc():
+    '''Extend a dataframe with a slice method which accepot wildcards in column selection.
+    
+    The method just juse the method vlist from modelclass.model class '''
+    
+    
+    def __init__(self, pandas_obj):
+#        self._validate(pandas_obj)
+        self._obj = pandas_obj
+#        print(self._obj)
+   
+    def __getitem__(self, select):
+        m = model()
+        m.lastdf  = self._obj
+#        print(select)
+        vars = m.vlist(select)
+        return self._obj.loc[:,vars]
+        
+    def __call__(self):
+        print('hello')
+        return 
+    
 
 def f(a):
     return 42

@@ -19,6 +19,7 @@ import matplotlib.pyplot  as plt
 import re
 from matplotlib import colors
 from matplotlib import cm,patches
+import itertools
 
 
 import pandas as pd
@@ -40,6 +41,7 @@ from modelmanipulation import split_frml,udtryk_parse,find_arg,stripstring,paste
 from modelclass import model 
 from modelmanipulation import normalize
 import modelclass as mc
+from modelpattern import nterm,udtrykre
 
 
 # in order to use theese reserved words from sympy as variables 
@@ -61,55 +63,67 @@ _clash['i']=Symbol('i')
 _clash['I']=Symbol('I')
 _clash['lt']=Symbol('lt')
 _clash['LT']=Symbol('LT')
+_clash['EX']=Symbol('EX')
 
 
 #print(_clash)
 
 def findallvar(model,v):
-    '''Finds all variables which is on the right side of = in the expresion for variable v
+    '''Finds all endogenous variables which is on the right side of = in the expresion for variable v
     lagged variables are included '''
     terms= model.allvar[v]['terms'][model.allvar[v]['assigpos']:-1]
-    rhsvar={(nt.var+('('+nt.lag+')' if nt.lag != '' else '')) for nt in terms if nt.var}
+    rhsvar={(nt.var+('('+nt.lag+')' if nt.lag != '' else '')) for nt in terms if nt.var and nt.var in model.endogene}
     var2=sorted(list(rhsvar))
     return var2
 
 def findendocur(model,v):
-    '''Finds all variables which is on the right side of = in the expresion for variable v
-    lagged variables are included '''
+    '''Finds all endegenoujs variables which is on the right side of = in the expresion for variable v
+    lagged variables are **not** included '''
     terms= model.allvar[v]['terms'][model.allvar[v]['assigpos']:-1]
     rhsvar={nt.var for nt in terms if nt.var and nt.var in model.endogene and nt.lag =='' and nt.var != v}
     var2=sorted(list(rhsvar))
     return var2
         
-def modeldiff(model,silent=False,onlyendocur=False):
+def modeldiff(model,silent=False,onlyendocur=False,endovar= None, maxdif=9999999999999999,forcenum=False):
     ''' Differentiate all relations with respect to all variable 
     The result is placed in a dictory in the model instanse: model.diffendocur
     '''
-    model.diffendocur={} #defaultdict(defaultdict) #here we wanmt to store the derivativs
-    i=0
-    for v in model.endogene:
-        if onlyendocur:
-            endocur=findendocur(model,v)
-        else: 
-            endocur=findallvar(model,v)
-        model.diffendocur[v]={}
-        t=model.allvar[v]['frml'].upper()
-        a,fr,n,udtryk=split_frml(t)
-        udtryk=udtryk
-        udtryk=re.sub(r'LOG\(','log(',udtryk) # sympy uses lover case for log and exp 
-        udtryk=re.sub(r'EXP\(','exp(',udtryk)
-        lhs,rhs=udtryk.split('=',1)
-        try:
-            kat=sympify(rhs[0:-1], _clash) # we take the the $ out _clash1 makes I is not taken as imiganary 
-        except:
-            print('*',lhs,'=',rhs[0:-1])
-        for rhv in endocur:
+    with mc.ttimer('Find espressions for partial derivatives',not silent):
+        model.diffendocur={} #defaultdict(defaultdict) #here we wanmt to store the derivativs
+        i=0
+        for nvar,v in enumerate(model.endogene):
+            if nvar >= maxdif:
+                break 
+            if not silent: 
+                print(f'Now differentiating {v} {nvar}')
+                
+            if onlyendocur:
+                endocur=findendocur(model,v)
+            else: 
+                endocur=findallvar(model,v)
+            model.diffendocur[v]={}
+            t=model.allvar[v]['frml'].upper()
+            a,fr,n,udtryk=split_frml(t)
+            udtryk=udtryk
+            udtryk=re.sub(r'LOG\(','log(',udtryk) # sympy uses lover case for log and exp 
+            udtryk=re.sub(r'EXP\(','exp(',udtryk)
+            lhs,rhs=udtryk.split('=',1)
             try:
-                ud=kat.diff(sympify(rhv,_clash))
-                model.diffendocur[v.upper()][rhv.upper()]=ud
+                kat=sympify(rhs[0:-1], _clash) # we take the the $ out _clash1 makes I is not taken as imiganary 
             except:
-                print(lhs,'|',rhv,'\n',lhs,'=',rhs)
-            i+=1
+                print('* Problem sympify ',lhs,'=',rhs[0:-1])
+            for rhv in endocur:
+                try:
+                    if not forcenum:
+                        ud=kat.diff(sympify(rhv,_clash))
+                    if forcenum or 'Derivative(' in str(ud) :
+                        ud = numdif(model,v,rhv,silent=silent)
+                        if not silent: print('numdif of {rhv}')
+                    model.diffendocur[v.upper()][rhv.upper()]=str(ud)
+    
+                except:
+                    print('we have a serous problem deriving:',lhs,'|',rhv,'\n',lhs,'=',rhs)
+                i+=1
     if not silent:        
         print('Model                           :',model.name)
         print('Number of variables             :',len(model.allvar))
@@ -125,14 +139,16 @@ def diffout(model):
             for lhsvar in sorted(model.diffendocur)
               for rhsvar in sorted(model.diffendocur[lhsvar])
             ] 
-    return out           
+    return out 
+ 
+       
 def diffprint(model,udfil=''):
     f=sys.stdout
     if udfil:f=open(udfil,'w+')
     i=0
     l=model.maxnavlen
     for v in sorted(model.diffendocur):
-        for v in sorted(model.diffendocur):
+        for e in sorted(model.diffendocur):
             print(v.ljust(l),e.ljust(l+5),model.diffendocur[v][e],file=f)
             i+=1
     print('Number of variables             :',len(model.allvar),file=f)
@@ -496,39 +512,44 @@ def stabilitet(model,minnumber=8,maxnumber=8):
             eigenval[lag]=w
             eigenvec[lag]=v
     return eigenval,eigenvec
+
+def tout(t):
+    if t.lag:
+        return f'{t.var}({t.lag})'
+    return t.op+t.number+t.var
+
+def numdif(model,v,rhv,delta = 0.005,silent=True) :
+#        print('**',model.allvar[v]['terms']['frml'])
+               
+        nt = model.allvar[v]['terms']
+        assignpos = nt.index(model.aequalterm)                       # find the position of = 
+        rhsterms = nt[assignpos+1:-1]
+        vterm = udtryk_parse(rhv)[0]
+        plusterm =  udtryk_parse(f'({rhv}+{delta/2})',funks=model.funks)
+        minusterm = udtryk_parse(f'({rhv}-{delta/2})',funks=model.funks)
+        plus  = itertools.chain.from_iterable([plusterm if t == vterm else [t] for t in rhsterms])
+        minus = itertools.chain.from_iterable([minusterm if t == vterm else [t] for t in rhsterms])
+        eplus  = f'({"".join(tout(t) for t in plus)})'
+        eminus = f'({"".join(tout(t) for t in minus)})'
+        expression = f'({eplus}-{eminus})/{delta}'
+        if not silent:
+            print(expression)
+        return expression 
+                
 if __name__ == '__main__':
-    pass
-    if 0: 
-        if 'mmona' not in globals() :
-            mmona=monastart()
-    #        msmec=smecstart()
-    #        madam=adamstart()
-        for model,per in [(mmona,'2014Q2')]:
-            print('Differentiate',model.name)
-            modeldiff(model)
-            val= calculate_diffvalue(model,model.basebank,per)
-            val3d=calculate_diffvalue_d3d(model)
-            A={lag:calculate_mat(model,lag,endo=True) for lag in val3d.keys()}
-            I=np.eye(np.shape(A[0])[0])
-            AINV=linalg.inv(I-A[0])
-            F={lag:calculate_mat(model,lag,endo=False) for lag in val3d.keys()}
-
-#        AINV={lag:linalg.inv(I-A[lag]) for lag in {0 , -8} }
 #%%
-        fmodel      = '''
-frml <> a = c(-1) + b  + 0.5 *d1 $ 
-frml <> d1 = x + 3 * a(-1)+ c **2 + 0.22*a(-1) + 0.55*a(-2) $ 
-frml <> d3 = x + 3 * a(-1)+c **3 + 33*x(-2)$  
-Frml <> x = 0.5 * a $'''
-        mmodel = model(fmodel) 
-        df = pd.DataFrame({'B': [1,1,1,1],'C':[1,2,3,4],'E':[4,4,4,4]},index=[2018,2019,2020,2021])
-        res = mmodel(df,antal=100)
-        matdir = calculate_allmat(mmodel,mmodel.basedf,2018)
-        # Display 
-#        for l,m in matdir.items():
-#            print(f'Lag:{l} \n {m} \n')
-        xx= get_compagnion(mmodel,mmodel.basedf,2020)
-        zzz=np.linalg.eig(xx)
-        eigplot(zzz[0])
+    def recode(condition,yes,no):
+        '''Function which recratetes the functionality of @recode from eviews ''' 
+        return yes if condition else no
 
+    ftest = '''\
+    a= b*2*c**3
+    b = a(-1)
+    d = recode(a>3,a(-1))
+    c= (a>3)
+     '''
+    mtest = model(ftest,funks=[recode])   
+    dmodel = diffmodel(mtest,forcenum=1)
+    zz = dmodel.equations
+    print(zz)
         

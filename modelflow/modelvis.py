@@ -137,25 +137,23 @@ class vis():
          difdf = self.thisdf-self.model.basedf.loc[:,self.names]
          return vis(model=self.model,df=difdf,pat=self.__pat__)
      @property
-     def difpctgrowth(self):
+     def difpctlevel(self):
+         ''' Returns the differens between the basedf and lastdf'''
+         difdf = (self.thisdf-self.model.basedf.loc[:,self.names])/ self.model.basedf.loc[:,self.names]
+         return vis(model=self.model,df=difdf,pat=self.__pat__)
+     @property
+     def difpct(self):
          ''' Returns the differens between the pct changes in basedf and lastdf'''
          difdf = self.thisdf.pct_change()-self.model.basedf.loc[:,self.names].pct_change()
          return vis(model=self.model,df=difdf,pat=self.__pat__)
-
-     @property
-     def difpct(self):
-         ''' Returns the differens in pct between basedf and lastdf'''
-         difdf = (self.thisdf/self.model.basedf.loc[:,self.names]-1.)*100.
-         return vis(model=self.model,df=difdf,pat=self.__pat__)
-
      @property
      def print(self):
          ''' prints the current result'''
-         print('\n',self.thisdf.loc[self.model.current_per,self.names].to_string())
+         print('\n',self.thisdf.loc[self.model.current_per,:].to_string())
          return 
      
      def __repr__(self):
-         return self.thisdf.loc[self.model.current_per,self.names].to_string() 
+         return self.thisdf.loc[self.model.current_per,:].to_string() 
      
      def __mul__(self,other):
          ''' Multiply the curent result with other '''
@@ -315,23 +313,26 @@ def vis_alt(grund,mul,title='Show variables'):
     return fig
     
 
-def plotshow(df,name='',ppos=-1,kind='line',colrow=6,sharey=True,splitchar='__',**kwargs):
+def plotshow(df,name='',ppos=-1,kind='line',colrow=6,sharey=True,top=0.90,splitchar='__',**kwargs):
     ''' Plots a subplot for each column in a datafra.
     ppos determins which split by __ to use 
     kind determins which kind of matplotlib chart to use '''  
     out=df.pipe(lambda df_: df_.rename(columns={v: v.split(splitchar)[ppos] for v in df_.columns}))
     number = out.shape[1] 
-    row=number//colrow+1
+    row=-((-number)//colrow)
     axes=out.plot(kind=kind,subplots=True,layout=(row,colrow),figsize = (10, row*2),
                  use_index=True,title=name,sharey=sharey)
     for ax in axes.flatten():
         pass
         ax.xaxis.set_minor_locator(plt.NullLocator())
         ax.tick_params(axis='x', labelleft=True)
-#    fig = axes.flatten()[0].get_figure()
-#    fig.tight_layout()
-#    fig.subplots_adjust(top=0.96)
-    
+    fig = axes.flatten()[0].get_figure()
+    fig.suptitle(name,fontsize=20)
+    fig.tight_layout()
+    # top = (row*(2-0.1)-0.2)/(row*(2-0.1))
+#    print(top)
+    fig.subplots_adjust(top=top)
+   # plt.subplot_tool()
     return axes
     
 def melt(df,source='Latest'):
@@ -410,23 +411,22 @@ def attshowone(df,name,pre='',head=5,tail=5):
     ax.set_title('Contributions to '+name+'.   '+txt)
     return ax
 
-if __name__ == '__main__' and 0:
+if __name__ == '__main__' and 1:
     pass
-    if  ( not 'mstotal' in locals() ) or True:
-        base    = pd.read_pickle(r'data\base.pc')    
-        adverse = pd.read_pickle(r'data\adverse.pc')
+    if  ( not 'ffrbus' in locals() ):
+        locfrbus = r'f:\mf modeller\frbus\python'
+        base    = pd.read_pickle(locfrbus+r'\data\baseline.pc')    
+        alt =     pd.read_pickle(locfrbus+r'/data/alt.pc')
         
     # get the model  
-        with open(r"models\mtotal.fru", "r") as text_file:
-            ftotal = text_file.read() 
-            mstotal = mc.model()
-        mstotal.basedf = base
-        mstotal.lastdf = adverse
-        mstotal.smpl('2016q1','2018q4',base)
-            
-    
-                
-    a=vis(mstotal,'PD__FF_HH_H*').dif.plot(kind='line',title='test2')
-    b=vis(mstotal,'rcet1__de*').dif.mul100.heat(cbar=0)
-    b=mstotal.compvis('PD__FF_HH_H*').box()
-    b=mstotal.vis('PD__FF_HH_H*').violin()
+        with open(locfrbus+r"\model\ffrbusvar.txt", "r") as text_file:
+            ffrbus = text_file.read() 
+    mfrbus = mc.model(ffrbus)
+    mfrbus.basedf = base
+    mfrbus.lastdf = alt
+    mfrbus.smpl('2020q1','2030q4',base)
+    _=mfrbus['rff*'].dif.plot(colrow=1)
+    _=mfrbus['rff'].dif.plot(colrow=1)
+    _=mfrbus[' '.join(['rff']*2)].dif.plot(colrow=1,top=0.92)
+    _=mfrbus[' '.join(['rff']*10)].dif.plot(colrow=1,top=0.965)
+      

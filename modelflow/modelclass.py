@@ -86,6 +86,7 @@ class BaseModel():
             self.save = True    # saves the dataframe in self.basedf, self.lastdf  
             self.analyzemodelnew(silent) # on board the model equations 
             self.maxstart=0
+            self.genrcolumns =[]
             self.tabcomplete = tabcomplete # do we want tabcompletion (slows dovn input to large models)
             self.previousbase = previousbase # set basedf to the previous run instead of the first run 
             self.use_preorder = False    # if prolog is used in sim2d 
@@ -235,6 +236,16 @@ class BaseModel():
     def reset_smpl():
         '''Reset the smpl to previous value''' 
         self.current_per = self.old_current_per
+
+    @property
+    def push_smpl():
+        '''pusch the Reset the smpl to previous value''' 
+        self.pushed_current_per = copy.deepcopy(self.current_per)
+        
+    @property
+    def pull_smpl():
+        '''pull the pushed smpl''' 
+        self.current_per = copy.deepcopy(self.pushed_current_per)
 
     @property
     def endograph(self) :
@@ -1061,12 +1072,13 @@ class model(BaseModel):
         res_calc = make(funks=self.funks) # using the factory create the function 
         return res_calc
     
-    def res(self,databank,start='',slut=''):
+    def res(self,databank,start='',slut='',silent=1):
         ''' calculates a model with data from a databank
         Used for check wether each equation gives the same result as in the original databank'
         '''
-        self.findpos()
-        res_calc = self.make_res() 
+        if not hasattr(self,'res_calc'):
+            self.findpos()
+            self.res_calc = self.make_res() 
         databank=insertModelVar(databank,self)   # kan man det her? I b 
         values=databank.values
         bvalues=values.copy()
@@ -1075,11 +1087,11 @@ class model(BaseModel):
         for per in sol_periode:
             row=databank.index.get_loc(per)
             aaaa=stuff3(values,row)
-            b=res_calc(aaaa) 
-            print(per,'Calculated')
+            b=self.res_calc(aaaa) 
+            if not silent: print(per,'Calculated')
             saveeval3(bvalues,row,b)
         xxxx =  pd.DataFrame(bvalues,index=databank.index,columns=databank.columns)    
-        print(self.name,': Res calculation finish from ',sol_periode[0],'to',sol_periode[-1])
+        if not silent: print(self.name,': Res calculation finish from ',sol_periode[0],'to',sol_periode[-1])
         return xxxx 
 
     
@@ -1529,7 +1541,7 @@ class model(BaseModel):
             try:
                 os.mkdir(tpath)
             except: 
-                print('Pyfs: can not create folder for graphs')
+                print("ModelFlow: Can't create folder for graphs")
                 return 
     #    filename = os.path.join(r'graph',navn+'.gv')
         filename = os.path.join(tpath,fname+'.gv')
@@ -1682,7 +1694,7 @@ class model(BaseModel):
             try:
                 os.mkdir(tpath)
             except: 
-                print('Pyfs: can not create folder for graphs')
+                print("ModelFlow: Can't create folder for graphs")
                 return 
     #    filename = os.path.join(r'graph',navn+'.gv')
         filename = os.path.join(tpath,fname+'.gv')
@@ -1939,11 +1951,11 @@ def randomdf(df,row=False,col=False,same=False,ran=False,cpre='C',rpre='R'):
     return dfout  
    
 @contextmanager
-def ttimer(input='test',show=True):
+def ttimer(input='test',show=True,short=False):
     """A timer context manager, implemented using a
     generator function. This one will report time even if an exception occurs"""
     start = time.time()
-    if show: print(f'{input} started at : {time.strftime("%H:%M:%S"):>{15}} ')
+    if show and not short: print(f'{input} started at : {time.strftime("%H:%M:%S"):>{15}} ')
     try:
         yield
     finally:

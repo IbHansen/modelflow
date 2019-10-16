@@ -36,27 +36,29 @@ class targets_instruments():
     
     '''
     
-    def __init__(self,targets,instruments,model,defaultimpuls=1.,defaultconv=0.01,gaussconv='FY', nonlin=False,silent = True, maxiter=30,  
-                 solveopt = {'antal':600,'first_test':20,'ljit':0}):
+    def __init__(self,databank,targets,instruments,model,DefaultImpuls=0.01,defaultconv=0.01, 
+                 nonlin=False,silent = True, maxiter=30,solveopt={}):
+
         self.model = model
         self.df = model.lastdf
         self.targetvars = targets if isinstance(targets,list) else targets.columns
         self.targetconv  = {t: defaultconv for t in self.targetvars} # make sure there is a convergence criteria ]
         self.targets    = targets
         self.instruments = {}
-        self.gaussconv = gaussconv
         self.solveopt = solveopt 
         self.silent = silent 
         self.debug=False
         self.maxiter = maxiter
         self.nonlin=nonlin
+        self.databank = databank.copy()
+        self.savesolvearg = model.oldkwargs if hasattr(model,'oldkwargs') else {}
         for inumber,i in enumerate(instruments): 
             vars =  i if isinstance(i,list) else [i] # make it a list even if one variable
             xx =   [v if isinstance(v,tuple) else (v,DefaultImpuls) for v in vars] # make sure there is a impuls 
             name = ','.join(n for n,i in xx)
             name = f'Instrument_{inumber}' if len(name)>500 else name 
             self.instruments[inumber] = {'name':name , 'vars': xx,  }
-        self.defaultimpuls = defaultimpuls
+        self.DefaultImpuls = DefaultImpuls
         
     def jacobi(self,per):
         ''' Calculates a jecobi matrix of derivatives based on the instruments and targets 
@@ -64,7 +66,7 @@ class targets_instruments():
         returns a dataframe '''
         
         self.jac = jac=pd.DataFrame(0,index=self.targetvars, columns=[v['name'] for v in self.instruments.values()])
-        mul = self.model(self.df,per ,per ,setlast=False,silent=self.silent,conv=self.gaussconv, **self.solveopt)           # start point for this quarter 
+        mul = self.model(self.df,per ,per ,setlast=False,silent=self.silent, **self.solveopt)           # start point for this quarter 
         basis = mul.copy(deep=True)  # make a reference point for the calculation the derivatives. 
         if not self.silent: print(f'Update jacobi: {per}')
         for instrument in self.instruments.values():
@@ -74,11 +76,14 @@ class targets_instruments():
                 mul.loc[per,var]    =     mul.loc[per,var] + impuls                      # increase loan growth
 # calculate the effect 
             opt = {'antal':600,'first_test':20,'ljit':0}
-            res = self.model(mul,per ,per ,setlast=False,silent=self.silent,conv=self.gaussconv, **self.solveopt) #antal=600,first_test=20,ljit=1)        # solve model 
+            res = self.model(mul,per ,per ,setlast=False,silent=self.silent, **self.solveopt) #antal=600,first_test=20,ljit=1)        # solve model 
+            
             jac.loc[self.targetvars,instrument['name']] = res.loc[per,self.targetvars]-basis.loc[per,self.targetvars] # store difference in original bank 
 # reset the instrument 
             for var,impuls in instrument['vars']:
                 mul.loc[per,var]=basis.loc[per,var]
+        self.model.oldkwargs = self.savesolvearg 
+
         return jac
     
     def invjacobi(self,per,diag=False):
@@ -94,21 +99,21 @@ class targets_instruments():
             out= pd.DataFrame(np.linalg.inv(x),x.columns,x.index)
         return out
     
-    def targetseek(self,conv='FY',silent=False,shortfall=False,**kwargs):
+    def targetseek(self,databank=None,shortfall=False,**kwargs):
         ''' Calculates the instruments as a function of targets '''
-        
+        silent =  kwargs.get('silent',self.silent)
         self.maxiter = kwargs.get('maxiter',self.maxiter)
         self.nonlin = kwargs.get('nonlin',self.nonlin)
-        tindex = self.model.current_per
-        res    = self.model.lastdf.copy(deep=True) 
+        tindex = self.model.current_per.copy()
+        res    = self.databank 
 #        self.inv  = inv  = self.invjacobi(self.targets.index[0])
         self.inv  = inv  = self.invjacobi(self.targets.index[0],diag=shortfall) 
 
-        self.conv = conv = pd.Series([self.targetconv[v] for v in self.targetvars],self.targetvars)
+        self.conv = pd.Series([self.targetconv[v] for v in self.targetvars],self.targetvars)
 #        print(inv)
         for per in self.targets.index:
             if not silent: print('Period:',per)
-            res = self.model(res,per ,per ,setlast=False,silent=self.silent,conv=self.gaussconv, **self.solveopt)
+            res = self.model(res,per ,per ,setlast=False,silent=self.silent, **self.solveopt)
             orgdistance = self.targets.loc[per,self.targetvars] - res.loc[per,self.targetvars]
             shortfallvar = (orgdistance >= 0)
             for iterations in range(self.maxiter):
@@ -116,7 +121,7 @@ class targets_instruments():
                 startdistance = self.targets.loc[per,self.targetvars] - res.loc[per,self.targetvars]
                 self.distance = distance = startdistance*shortfallvar if shortfall else startdistance
                 if self.debug: print(f'Distance    :{startdistance}\nOrgDistance :{distance}')
-                if (distance.abs()>=conv).any():
+                if (distance.abs()>=self.conv).any():
                     if self.nonlin:
                          self.inv  = inv  = self.invjacobi(per,diag=shortfall)
                     update = inv.dot(distance)
@@ -124,11 +129,13 @@ class targets_instruments():
                     for instrument in self.instruments.values():
                         for var,impuls in instrument['vars']:
                             res.loc[per,var]    =   res.loc[per,var] + update[instrument['name']] * impuls  # increase loan growth
-                    res = self.model(res,per ,per ,setlast=False,silent=self.silent,conv=self.gaussconv, **self.solveopt)
+                    res = self.model(res,per ,per ,setlast=False,silent=self.silent, **self.solveopt)
                 else:
                     break
         self.model.lastdf = res
+        self.model.oldkwargs = self.savesolvearg 
         self.model.current_per = tindex
+
         return res
     
    
