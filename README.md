@@ -3,9 +3,13 @@ A Python toolkit to manage models
 
 The easy way to start is here [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/IbHansen/modelflow/master). 
 
-This will start **ModelFlow** as an online Jupyter notebook. Select one of the notebooks (files with the extension .ipynb). 
+This will start **ModelFlow** as an online Jupyter notebook. Select one of the notebooks (files with the extension .ipynb). Some of the 
+notebooks are ModelFlow related. Other implement different model 
 
- - FRBUS  will start the FRB/US model from the Federal reserve board. and you 
+ - FRBUS  will start the FRB/US model from the Federal reserve board. 
+ - Q-JEM will start the Quarterly Japanese Economic Model from Bank of Japan
+ - ADAM will start the Anual Danish Aggregate Model for the Danish Statistical agency. 
+ - Solow will implement a simple textybook Solow model. 
 
 You can also look at the python files of the system. Located at the **modelflow/** folder
 
