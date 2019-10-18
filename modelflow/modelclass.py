@@ -202,7 +202,7 @@ class BaseModel():
                         self.allvar[var]['dropfrml'] = False
          
             except:
-                print('This model has simultaneous elements or cyclical elements. The formulars will be evaluated in input sequence')
+                print('This model has simultaneous elements or cyclical elements.')
                 self.istopo = False 
                 self.solveorder = self.nrorder
 
