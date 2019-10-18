@@ -1793,9 +1793,9 @@ def create_strong_network(g,name='Network',typeout=False,show=False):
     ''' 
     strong_condensed = nx.condensation(g)
     strong_topo      = list(nx.topological_sort(strong_condensed))
-    solveorder       = [v   for s in strong_topo for v in strong_condensed.node[s]['members']]
+    solveorder       = [v   for s in strong_topo for v in strong_condensed.nodes[s]['members']]
     if typeout: 
-        block = [[v for v in strong_condensed.node[s]['members']] for s in strong_topo]
+        block = [[v for v in strong_condensed.nodes[s]['members']] for s in strong_topo]
         type  = [('Simultaneous'+str(i) if len(l)  !=1 else 'Recursiv ',l) for i,l in enumerate(block)] # count the simultaneous blocks so they do not get lumped together 
 # we want to lump recursive equations in sequense together 
         strongblock = [[i for l in list(item) for i in l[1]  ] for key,item in groupby(type,lambda x: x[0])]
