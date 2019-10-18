@@ -5,7 +5,7 @@ channels:
 dependencies:
   - pandas
   - seaborn
-  - networkx=2.1
+  - networkx
   - graphviz
   - sympy
   - cvxopt
