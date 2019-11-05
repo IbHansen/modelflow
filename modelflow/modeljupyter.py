@@ -158,7 +158,7 @@ def inputwidget(model,df,slidedef={},radiodef=[],checkdef=[],modelopt={},varpat=
         
         wset  = [widgets.FloatSlider(description=des,
                                     min=cont['min'],max=cont['max'],value=cont['value'],step=cont.get('step',0.01),
-                                    layout={'width':'50%'},style={'description_width':'30%'})
+                                    layout={'width':'60%'},style={'description_width':'40%'})
                  for des,cont in slidedef.items()]
         waltval= [widgets.Label(value=f"{cont['value']:>.2f}",layout={'width':'8%'})
                   for des,cont  in slidedef.items()]

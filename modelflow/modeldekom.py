@@ -13,21 +13,28 @@ Created on Wed May 31 08:50:51 2017
 
 import pandas as pd
 import fnmatch 
+import matplotlib.pyplot as plt 
+import matplotlib as mpl
+import numpy
+
 
 from modelclass import ttimer 
 import modelclass as mc 
+import modeldekom as mk 
+import modelvis as mv
 
-
-def attribution(model,experiments,start='2016q1',end='2018q4',save='',maxexp=1000,showtime=False,
-                summaryvar=['RCET1__*','AGG_RCET1__*','PD__[!Q]*','LOGITPD__[!Q]*']
-                ,silent=False):
+idx= pd.IndexSlice
+    
+def attribution(model,experiments,start='',end='',save='',maxexp=10000,showtime=False,
+                summaryvar=['*']
+                ,silent=False,msilent=True):
     """ Calculates an attribution analysis on a model 
     accepts a dictionary with experiments. the key is experiment name, the value is a list 
     of variables which has to be reset to the values in the baseline dataframe. """  
     summaryout = model.vlist(summaryvar)
     adverseny = model.lastdf
     base = model.basedf
-    adverse0=adverseny[summaryout].loc[start:,:].copy() 
+    adverse0=adverseny[summaryout].loc[start:end,:].copy() 
     ret={}
     modelsave = model.save  # save the state of model.save 
     model.save = False      # no need to save the experiments in each run 
@@ -39,7 +46,7 @@ def attribution(model,experiments,start='2016q1',end='2018q4',save='',maxexp=100
                 print(i,'Experiment :',e,'\n','Touching: \n', var)
             adverseny[var] = base[var]
             ret[e] = model(adverseny   ,start,end,samedata=True,
-                silent=True)[summaryout].loc[start:,:]
+                silent=msilent)[summaryout].loc[start:end,:]
             adverseny[var] = temp
 #            adverseny = mc.upddf(adverseny,temp)
 
@@ -52,10 +59,23 @@ def attribution(model,experiments,start='2016q1',end='2018q4',save='',maxexp=100
     model.save = modelsave # restore the state of model.save 
     return df
 
+
 def ilist(df,pat):
-    '''returns a list of variable in the index of a dataframe, the pattern can be a list of patterns'''
-    ipat = pat if isinstance(pat,list) else [pat]
-    return [v for  p in ipat for v in sorted(fnmatch.filter(df.index,p.upper()))] 
+    '''returns a list of variable in the model matching the pattern, 
+    the pattern can be a list of patterns of a sting with patterns seperated by 
+    blanks
+    
+    This function operates on the index names of a dataframe. Relevant for attribution analysis
+    '''
+    if isinstance(pat,list):
+           upat=pat
+    else:
+           upat = [pat]
+           
+    ipat = upat
+    out = [v for  p in ipat for up in p.split() for v in sorted(fnmatch.filter(df.index,up.upper()))]  
+    return out
+
     
 def GetAllImpact(impact,sumaryvar):
     ''' get all the impact from at impact dataframe''' 
@@ -72,15 +92,90 @@ def GetSumImpact(impact,pat='PD__*'):
 def GetLastImpact(impact,pat='RCET1__*'):
     """Gets the last differences attributet to each impact group """ 
     a = impact.loc[ilist(impact,pat),:].groupby(level=[0],axis=1).last()   
+    return a
+ 
+def GetAllImpact(impact,pat='RCET1__*'):
+    """Gets the last differences attributet to each impact group """ 
+    a = impact.loc[ilist(impact,pat),:] 
+    return a 
+
+def GetOneImpact(impact,pat='RCET1__*',per=''):
+    """Gets differences attributet to each impact group in period:per """ 
+    a = impact.loc[ilist(impact,pat),idx[:,per]] 
+    a.columns = [v[0] for v in a.columns]
     return a 
 
 def AggImpact(impact):
-    """ Calculates the sum of impacts and place in the last column""" 
+    """ Calculates the sum of impacts and place in the last column
+    
+    This function is applied to the result iof a Get* function""" 
     asum= impact.sum(axis=1)
     asum.name = '_Sum'
     aout = pd.concat([impact,asum],axis=1)
     return aout 
 
+
+class totdekomp():
+    ''' Class to make modelvide attribution analysis 
+    
+    '''
+    
+    def __init__(self, model,summaryvar='*',desdic={} ):
+       
+       self.diffdf  = model.exodif()
+       self.diffvar = self.diffdf.columns
+       if len(self.diffvar) == 0:
+           print('No variables to attribute to ')
+           self.go = False 
+       else: 
+           self.go = True 
+           self.experiments = {v:v for v in self.diffvar}
+           self.model = model 
+           self.start = self.model.current_per.tolist()[0]
+           self.end = self.model.current_per.tolist()[-1]
+           
+           self.desdic = desdic       
+           
+           self.res = attribution(self.model,self.experiments,self.start,self.end,summaryvar=summaryvar,showtime=1,silent=1)
+       
+    def explain_last(self,pat='',top=0.9,title='Attribution last period'):  
+        if self.go:         
+            self.impact = mk.GetLastImpact(self.res,pat=pat).T
+            fig = mv.waterplot(self.impact,autosum=1,allsort=1,top=top,title= title,desdic=self.desdic)
+            return fig
+   
+    def explain_sum(self,pat='',top=0.9,title='Attribution, sum over all periods'): 
+        if self.go:          
+           self.impact = mk.GetSumImpact(self.res,pat=pat).T
+           fig = mv.waterplot(self.impact,autosum=1,allsort=1,top=top,title=title,desdic=self.desdic )
+           return fig
+   
+    def explain_per(self,pat='',per='',top=0.9,title='Attribution, for one periode'):   
+        if self.go:        
+           ntitle = f'{title}: {per}'
+           self.impact = mk.GetOneImpact(self.res,pat=pat,per=per).T
+           fig = mv.waterplot(self.impact,autosum=1,allsort=1,top=top,title=ntitle,desdic=self.desdic )
+           return fig
+   
+            
+    def explain_all(self,pat='',stacked=True,kind='bar',top=0.9,title='Attribution'): 
+        if self.go:
+            selected =   GetAllImpact(self.res,pat) 
+            grouped = selected.stack().groupby(level=[0])
+            fig, axis = plt.subplots(nrows=len(grouped),ncols=1,figsize=(10,5*len(grouped)),constrained_layout=False)
+            width = 0.5  # the width of the barsser
+            laxis = axis if isinstance(axis,numpy.ndarray) else [axis]
+            for i,((name,dfatt),ax) in enumerate(zip(grouped,laxis)):
+                dfatt.index = [i[1] for i in dfatt.index]
+                dfatt.plot(ax=ax,kind=kind,stacked=stacked,title=self.desdic.get(name,name))
+                ax.set_ylabel(name,fontsize='x-large')
+                ax.set_xticklabels(dfatt.index.tolist(), rotation = 45,fontsize='x-large')
+            fig.suptitle(title,fontsize=20)
+            if 1:
+                plt.tight_layout()
+                fig.subplots_adjust(top=top)
+        
+            plt.show()
 
 if __name__ == '__main__' :
     # running withe the mtotal model 

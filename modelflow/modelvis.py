@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import fnmatch 
 from matplotlib import dates
+import numpy 
 
 import modelclass as mc
         
@@ -411,7 +412,95 @@ def attshowone(df,name,pre='',head=5,tail=5):
     ax.set_title('Contributions to '+name+'.   '+txt)
     return ax
 
+
+def water(serx,sort=False,ascending =True,autosum=False,allsort=False):
+    ''' Creates a dataframe with information for a watrfall diagram 
+    
+    :serx:  the input serie of values
+    :sort:  True if the bars except the first and last should be sorted (default = False)
+    :allsort:  True if all bars should be sorted (default = False)
+    :autosum:  True if a Total bar are added in the end  
+    :ascending:  True if sortorder = ascending  
+    
+    Returns a dataframe with theese columns:
+    
+    :hbegin: Height of the first bar
+    :hend: Height of the last bar
+    :hpos: Height of positive bars
+    :hneg: Height of negative bars
+    :start: Ofset at which each bar starts 
+    :height: Height of each bar (just for information)
+    '''
+    # get the height of first and last column 
+    
+   
+    total=serx.sum() 
+    
+    if sort or allsort :   # sort rows except the first and last
+        endslice   = None if allsort else -1
+        startslice = None if allsort else  1
+        i = serx[startslice:endslice].sort_values(ascending =ascending ).index
+        if allsort:            
+            newi =i.tolist() 
+        else:
+            newi =[serx.index.tolist()[0]]  + i.tolist() + [serx.index.tolist()[-1]]# Get the head and tail 
+        ser=serx[newi]
+    else:
+        ser=serx
+        
+    if autosum:
+        ser['Total'] = total
+        
+    hbegin = ser.copy()
+    hbegin[1:]=0.0
+    hend   = ser.copy()
+    hend[:-1] = 0.0
+         
+    
+    height = ser 
+    start = ser.cumsum().shift().fillna(0.0)  # the  starting point for each bar
+    start[-1] = start[-1] if allsort and not autosum else 0     # the last bar should start at 0
+    end = start + ser
+
+    hpos= height*(height>=0.0)
+    hneg= height*(height<=0.0)
+    dfatt = pd.DataFrame({'start':start,'hbegin':hbegin,'hpos':hpos,'hneg':hneg,'hend':hend,'height':height}).loc[ser.index,:]
+
+    return dfatt
+
+def waterplot(basis,sort=False,ascending =True,autosum=False,
+              allsort=False,title=f'Attribution ',top=0.9, desdic = {}, **kwarg):
+    att = [(name,water(ser,sort=True,autosum=autosum,allsort=allsort)) 
+                       for name,ser in basis.transpose().iterrows()]
+
+    fig, axis = plt.subplots(nrows=len(att),ncols=1,figsize=(10,4*len(att)),constrained_layout=False)
+    width = 0.5  # the width of the barsser
+    laxis = axis if isinstance(axis,numpy.ndarray) else [axis]
+    for i,((name,dfatt),ax) in enumerate(zip(att,laxis)):
+        _ = dfatt.hpos.plot(ax=ax,kind='bar',bottom=dfatt.start,stacked=True,
+                            color='green',width=width)
+        _ = dfatt.hneg.plot(ax=ax,kind='bar',bottom=dfatt.start,stacked=True,
+                            color='red',width=width)
+        _ = None if allsort else dfatt.hbegin.plot(ax=ax,kind='bar',bottom=dfatt.start,stacked=True,color='blue',width=width)
+        _ = None if allsort and not autosum else dfatt.hend.plot(ax=ax,kind='bar',bottom=dfatt.start,stacked=True,color='blue',width=width)
+        ax.set_ylabel(name,fontsize='x-large')
+        ax.set_title(desdic.get(name,name))
+        ax.set_xticklabels(dfatt.index.tolist(), rotation = 45,fontsize='x-large')
+#        plt.xticks(rotation=45, horizontalalignment='right', 
+#                   fontweight='light', fontsize='x-large'  )
+    fig.suptitle(title,fontsize=20)
+    if 1:
+        plt.tight_layout()
+        fig.subplots_adjust(top=top)
+
+    plt.show()
+    return fig
+
 if __name__ == '__main__' and 1:
+    basis = pd.DataFrame([[100,100.],[-10.0,-12], [12,-10],[-10,10]],index=['nii','cost','credit','fee'],columns=['ex','ex2'])
+    basis.loc['total'] = basis.sum()
+    waterplot(basis)
+    
     pass
     if  ( not 'ffrbus' in locals() ):
         locfrbus = r'f:\mf modeller\frbus\python'
