@@ -1400,7 +1400,7 @@ class model(BaseModel):
                     yield from self.upwalk(g,child, level + 1,navn, up,select,lpre)
 
 
-    def (self,var,up=1,start='',end='',select=False,showatt=True,lag=True,debug=0,**kwargs):
+    def explain(self,var,up=1,start='',end='',select=False,showatt=True,lag=True,debug=0,**kwargs):
         ''' Walks a tree to explain the difference between basedf and lastdf
         
         Parameters:
