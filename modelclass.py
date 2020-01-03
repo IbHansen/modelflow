@@ -27,6 +27,7 @@ import webbrowser as wb
 import importlib
 import gc
 import copy 
+import matplotlib.pyplot as plt 
 
 
 
@@ -1287,6 +1288,8 @@ class model(BaseModel):
     
         pctendo=pctendo[pctendo.columns].astype(float)    
         return res2df,resdf,pctendo
+    
+    
       
     def treewalk(self,g,navn, level = 0,parent='Start',maxlevel=20,lpre=True):
         ''' Traverse the call tree from name, and returns a generator \n
@@ -1312,8 +1315,49 @@ class model(BaseModel):
                     print('---'*v.lev+v.child)                    
                 if ldekomp :
                     x=self.dekomp(v.child,lprint=1,start=start,end=end)
+
+
                 
+    def dekomp_plot_per(self,varnavn,sort=False,pct=True,per='',threshold= 0.0):
+        
+        thisper = self.current_per[-1] if per == '' else per
+        xx = self.dekomp(varnavn.upper(),lprint=False)
+        ddf = join_name_lag(xx[2] if pct else xx[1])
+#        tempdf = pd.DataFrame(0,columns=ddf.columns,index=['Start']).append(ddf)
+        tempdf = ddf
+        per_loc = tempdf.columns.get_loc(per)
+        nthreshold = '' if threshold == 0.0 else f', threshold = {threshold}'
+        ntitle=f'Equation attribution, pct{nthreshold}:{per}' if pct else f'Formula attribution {nthreshold}:{per}'
+        plotdf = tempdf.loc[[c for c in tempdf.index.tolist() if c.strip() != 'Total']
+                ,:].iloc[:,[per_loc]]
+        plotdf.columns = [varnavn.upper()]
+#        waterdf = self.cutout(plotdf,threshold)
+        waterdf = plotdf
+        res = mv.waterplot(waterdf,autosum=1,allsort=sort,top=0.86,
+                           sort=sort,title=ntitle,bartype='bar',threshold=threshold);
+        return res
     
+
+        
+    def dekomp_plot(self,varnavn,sort=True,pct=True,per='',top=0.9,threshold=0.0):
+        xx = self.dekomp(varnavn,lprint=False)
+        ddf0 = join_name_lag(xx[2] if pct else xx[1]).pipe(
+                lambda df: df.loc[[i for i in df.index if i !='Total'],:])
+        ddf = cutout(ddf0,threshold )
+        fig, axis = plt.subplots(nrows=1,ncols=1,figsize=(10,5),constrained_layout=False)
+        ax = axis
+        ddf.T.plot(ax=ax,stacked=True,kind='bar')
+        ax.set_ylabel(varnavn,fontsize='x-large')
+        ax.set_xticklabels(ddf.T.index.tolist(), rotation = 45,fontsize='x-large')
+        nthreshold = f'' if threshold == 0.0 else f', threshold = {threshold}'
+
+        ntitle = f'Equation attribution{nthreshold}' if threshold == 0.0 else f'Equation attribution {nthreshold}'
+        fig.suptitle(ntitle,fontsize=20)
+        fig.subplots_adjust(top=top)
+        
+        return fig  
+
+        
      
     def drawendo(self,**kwargs):
        '''draws a graph of of the whole model''' 
@@ -1949,6 +1993,45 @@ def randomdf(df,row=False,col=False,same=False,ran=False,cpre='C',rpre='R'):
             rowdic = {c : rpre+('{0:0'+dec+'d}').format(i)  for i,c in enumerate(ranrow)}
             dfout = dfout.rename(index=rowdic).sort_index(axis=0)
     return dfout  
+    
+def cutout(input,threshold=0.0):
+    '''get rid of rows below treshold and returns the dataframe or serie '''
+    if type(input)==pd.DataFrame:
+        org_sum = input.sum(axis=0)   
+        new = input.iloc[(abs(input) >= threshold).any(axis=1).values,:]
+        if len(new) < len(input):
+            new_sum = new.sum(axis=0)
+            small = org_sum - new_sum
+            small.name = 'Small'
+            output = new.append(small)
+        else:
+            output = input 
+        return output
+    if type(input)==pd.Series:
+        org_sum = input.sum()   
+        new = input.iloc[(abs(input) >= threshold).values]
+        if len(new) < len(input):
+            new_sum = new.sum()
+            small = pd.Series(org_sum - new_sum)
+            small.index = ['Small']
+            output = new.append(small)
+        else:
+            output=input
+        return output
+    
+
+def join_name_lag(df):
+    '''creates a new dataframe where  the name and lag from multiindex is joined
+
+    as input a dataframe where name and lag are two levels in multiindex 
+    '''
+    
+    xl = lambda x: f"({x[1]})" if x[1] else ""
+    newindex = [f'{i[0]}{xl(i)}'  for i in zip(df.index.get_level_values(0),df.index.get_level_values(1))]
+    newdf = df.copy()
+    newdf.index = newindex
+    return newdf
+
    
 @contextmanager
 def ttimer(input='test',show=True,short=False):

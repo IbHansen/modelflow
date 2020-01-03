@@ -47,7 +47,7 @@ import modeldiff as md
 from modelmanipulation import split_frml,udtryk_parse
 from modelclass import model, ttimer, insertModelVar
 from modelinvert import targets_instruments
-from modeldekom import totdekomp
+import modeljupyter
 
 import modelvis as mv
 import modelmf
@@ -81,7 +81,7 @@ class newmodel(model):
                 if self.previousbase and hasattr(self,'lastdf'):
                     self.basedf = self.lastdf.copy(deep=True)
                 
-            if kwargs.get('sim2',False):
+            if self.oldkwargs.get('sim2',True):
                 outdf = self.sim2d(*args, **newkwargs )   
             else: 
                 outdf = self.sim1d( *args, **newkwargs) 
@@ -1118,6 +1118,7 @@ class newmodel(model):
         self.stackrows=[databank.index.get_loc(p) for p in sol_periode]
         with ttimer(f'\nres calculation',timeit) as xxtt:
                 for row in self.stackrows:
+                    self.periode = databank.index[row]
                     self.prores2d(values, outvalues, row ,  alfa )
                     self.solveres2d(values, outvalues, row ,  alfa )
                     self.epires2d(values, outvalues, row ,  alfa )
@@ -1144,47 +1145,32 @@ class newmodel(model):
         res = self.t_i()
         return res
 
-    def totdif(self,summaryvar='*',desdic={} ):
-        self.totdekomp = totdekomp(self,summaryvar=summaryvar,desdic=desdic )
-        return self.totdekomp
-        
-    def totexplain(self,pat='*',type='all',stacked=True,kind='bar',per='',top=0.9,title=''):
+       
+    def totexplain(self,pat='*',vtype='all',stacked=True,kind='bar',per='',top=0.9,title=''
+                   ,use='level',threshold=0.0):
         if not hasattr(self,'totdekomp'):
-            self.totdekomp = totdekomp(self,summaryvar='*',desdic={})
-            
-        if type.upper() == 'PER' : 
-            fig = self.totdekomp.explain_per(pat=pat,per=per,top=top,
-            title='Attribution, for one periode' if title =='' else  title)
-            
-        elif type.upper() == 'LAST' : 
-            fig = self.totdekomp.explain_last(pat=pat,top=top,
-            title='Attribution last period' if title =='' else  title)
-            
-        elif type.upper() == 'SUM' : 
-            fig = self.totdekomp.explain_sum(pat=pat,top=top,
-            title='Attribution, sum over all periods' if title =='' else  title)
-            
-        else:    
-            fig = self.totdekomp.explain_all(pat=pat,stacked=stacked,kind=kind,top=top,
-                                       title='Attribution' if title =='' else title)
-        return fig 
-
-    def get_att_gui(self,var='FY',spat = '*',desdic={}):
-        def show_all2(Variable,Periode,Save):
-             global fig1,fig2
-             fig1 = self.totexplain(pat=Variable,top=0.87)
-             fig2 = self.totexplain(pat=Variable,type='per',per = Periode,top=0.85) 
-             if Save:
-                fig1.savefig(f'Attribution-{Variable}.pdf')
-                fig2.savefig(f'Attribution-{Variable}-{Periode}.pdf')
-                print(f'Attribution-{Variable}.pdf and Attribution-{Variable}-{Periode}.pdf aare saved' )
+            from modeldekom import totdif
+            self.totdekomp = totdif(self,summaryvar='*',desdic={})
+        
+        fig = self.totdekomp.totexplain(pat=pat,vtype=vtype,stacked=stacked,kind=kind,
+                                        per = per ,top=top,title=title,use=use,threshold=threshold)
+        return fig
+        
     
-        show = ip.interactive(show_all2,
-                  Variable = ip.Dropdown(options = sorted(self.endogene),value=var),
-                  Periode  = self.current_per,
-                  Save = False)
-        self.totdekomp = totdekomp(self,summaryvar=spat,desdic=desdic)
-        return show 
+    def get_att_gui(self,var='FY',spat = '*',desdic={},use='level'):
+        '''Creates a jupyter ipywidget to display model level 
+        attributions ''' 
+        if not hasattr(self,'totdekomp'):
+            from modeldekom import totdif
+            self.totdekomp = totdif(model=self,summaryvar=spat,desdic=desdic)
+            print('TOTDEKOMP made')
+        if self.totdekomp.go:
+            xx =modeljupyter.get_att_gui( self.totdekomp,var=var,spat = spat,desdic=desdic,use=use)
+            return xx
+        else:
+            del self.totdekomp 
+            return 'Nothing to attribute'
+            
 
 class newton_diff():
     ''' Class to handle newron solving 
@@ -1465,11 +1451,12 @@ def f(a):
 
 if __name__ == '__main__':
     
-    
+        from modeldekom import totdif
+  
     #%%
     #this is for testing 
         df2 = pd.DataFrame({'Z':[1., 22., 33,43] , 'TY':[10.,20.,30.,40.] ,'YD':[10.,20.,30.,40.]},index=[2017,2018,2019,2020])
-        df3 = pd.DataFrame({'Z':[1., 22., 33,43] , 'TY':[10.,40.,60.,40.] ,'YD':[10.,49.,36.,40.]},index=[2017,2018,2019,2020])
+        df3 = pd.DataFrame({'Z':[1., 22., 33,43] , 'TY':[10.,40.,60.,10.] ,'YD':[10.,49.,36.,40.]},index=[2017,2018,2019,2020])
         ftest = ''' 
         FRMl <>  ii = TY(-1)+c(-1)+Z*c(+1) $
         frml <>  c=0.8*yd+log(1) $
@@ -1482,15 +1469,16 @@ if __name__ == '__main__':
         m2=newmodel(ftest,funks=[f],straight=True,modelname='m2 testmodel')
         df2=insertModelVar(df2,m2)
         df3=insertModelVar(df3,m2)
-        xx = m2.xgenr(df2)
-        m2.lastdf = xx
-        m2.res2d(df2,ljit=0,chunk=2,debug=1)
-        zz = m2.make_res_text2d_nojit
-        z1=m2(df2)
+        z1 = m2(df2)
         z2 = m2(df3)
-        ccc = m2.totexplain('D2',per=2019,type='per',top=0.8)
-        ccc = m2.totexplain('D2',type='last',top=0.8)
-        ccc = m2.totexplain('D2',type='sum',top=0.8)
+#        ccc = m2.totexplain('D2',per=2019,vtype='per',top=0.8)
+#        ccc = m2.totexplain('D2',vtype='last',top=0.8)
+#        ccc = m2.totexplain('D2',vtype='sum',top=0.8)
+#%%        
+        ddd = totdif(m2)
+        eee = totdif(m2)
+        ddd.totexplain('D2',vtype='all',top=0.8)
+        eee.totexplain('D2',vtype='all',top=0.8)
         #%%
         nn = newton_diff(m2,df=df2,timeit=0,onlyendocur=1)
         mat_dif = nn.get_diff_mat_tot(df=xx)

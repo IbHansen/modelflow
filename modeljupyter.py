@@ -111,10 +111,10 @@ def vis_alt3(dfs,model,title='Show variables',basename='Baseline',altname='Alter
     return tab
 
 # Define data extraction
-def get_alt(mmodel,pat):
+def get_alt(mmodel,pat,onlyendo=False):
     ''' Retrieves variables matching pat from a model '''
     varnames = mmodel.vlist(pat)
-    modelvar = mmodel.exogene | mmodel.endogene
+    modelvar = mmodel.endogene if onlyendo else mmodel.exogene | mmodel.endogene 
     modelvarnames = list(dict.fromkeys([v for v in varnames if v in modelvar])) # to awoid dublicate names
     per = mmodel.current_per
     return [mmodel.basedf.loc[per,modelvarnames],mmodel.lastdf.loc[per,modelvarnames]]
@@ -256,3 +256,24 @@ def inputwidget(model,df,slidedef={},radiodef=[],checkdef=[],modelopt={},varpat=
     out = widgets.Output()
     
     return w
+
+def get_att_gui(totdif,var='FY',spat = '*',desdic={},use='level',kind='bar'):
+    '''Creates a jupyter ipywidget to display model level 
+    attributions ''' 
+    def show_all2(Variable,Periode,Save,Use):
+         global fig1,fig2
+         fig1 = totdif.totexplain(pat=Variable,top=0.87,use=Use,kind=kind)
+         fig2 = totdif.totexplain(pat=Variable,vtype='per',per = Periode,top=0.85,use=Use) 
+         if Save:
+            fig1.savefig(f'Attribution-{Variable}-{use}.pdf')
+            fig2.savefig(f'Attribution-{Variable}-{Periode}-{use}.pdf')
+            print(f'Attribution-{Variable}-{use}.pdf and Attribution-{Variable}-{Periode}-{use}.pdf aare saved' )
+
+    show = widgets.interactive(show_all2,
+              Variable = widgets.Dropdown(options = sorted(totdif.model.endogene),value=var),
+              Periode  = widgets.Dropdown(options = totdif.model.current_per),
+              Use = widgets.RadioButtons(options= ['level', 'growth'],description='Use'),
+              Save = widgets.Checkbox(description='Save the charts',value=False)
+              )
+    return show 
+

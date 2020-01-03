@@ -413,7 +413,7 @@ def attshowone(df,name,pre='',head=5,tail=5):
     return ax
 
 
-def water(serx,sort=False,ascending =True,autosum=False,allsort=False):
+def water(serxinput,sort=False,ascending =True,autosum=False,allsort=False,threshold=0.0):
     ''' Creates a dataframe with information for a watrfall diagram 
     
     :serx:  the input serie of values
@@ -434,8 +434,8 @@ def water(serx,sort=False,ascending =True,autosum=False,allsort=False):
     # get the height of first and last column 
     
    
-    total=serx.sum() 
-    
+    total=serxinput.sum() 
+    serx = mc.cutout(serxinput,threshold)
     if sort or allsort :   # sort rows except the first and last
         endslice   = None if allsort else -1
         startslice = None if allsort else  1
@@ -446,7 +446,7 @@ def water(serx,sort=False,ascending =True,autosum=False,allsort=False):
             newi =[serx.index.tolist()[0]]  + i.tolist() + [serx.index.tolist()[-1]]# Get the head and tail 
         ser=serx[newi]
     else:
-        ser=serx
+        ser=serx.copy()
         
     if autosum:
         ser['Total'] = total
@@ -468,21 +468,22 @@ def water(serx,sort=False,ascending =True,autosum=False,allsort=False):
 
     return dfatt
 
-def waterplot(basis,sort=False,ascending =True,autosum=False,
-              allsort=False,title=f'Attribution ',top=0.9, desdic = {}, **kwarg):
-    att = [(name,water(ser,sort=True,autosum=autosum,allsort=allsort)) 
+def waterplot(basis,sort=True,ascending =True,autosum=False,bartype='bar',threshold=0.0,
+              allsort=False,title=f'Attribution ',top=0.9, desdic = {},zero=True, **kwarg):
+    att = [(name,water(ser,sort=sort,autosum=autosum,allsort=allsort,threshold=threshold)) 
                        for name,ser in basis.transpose().iterrows()]
 
-    fig, axis = plt.subplots(nrows=len(att),ncols=1,figsize=(10,4*len(att)),constrained_layout=False)
+    fig, axis = plt.subplots(nrows=len(att),ncols=1,figsize=(10,5*len(att)),constrained_layout=False)
     width = 0.5  # the width of the barsser
     laxis = axis if isinstance(axis,numpy.ndarray) else [axis]
     for i,((name,dfatt),ax) in enumerate(zip(att,laxis)):
-        _ = dfatt.hpos.plot(ax=ax,kind='bar',bottom=dfatt.start,stacked=True,
+        _ = dfatt.hpos.plot(ax=ax,kind=bartype,bottom=dfatt.start,stacked=True,
                             color='green',width=width)
-        _ = dfatt.hneg.plot(ax=ax,kind='bar',bottom=dfatt.start,stacked=True,
+        _ = dfatt.hneg.plot(ax=ax,kind=bartype,bottom=dfatt.start,stacked=True,
                             color='red',width=width)
-        _ = None if allsort else dfatt.hbegin.plot(ax=ax,kind='bar',bottom=dfatt.start,stacked=True,color='blue',width=width)
-        _ = None if allsort and not autosum else dfatt.hend.plot(ax=ax,kind='bar',bottom=dfatt.start,stacked=True,color='blue',width=width)
+        _ = None if allsort else dfatt.hbegin.plot(ax=ax,kind=bartype,bottom=dfatt.start,
+                stacked=True,color='green' if zero else 'blue',width=width)
+        _ = None if allsort and not autosum else dfatt.hend.plot(ax=ax,kind=bartype,bottom=dfatt.start,stacked=True,color='blue',width=width)
         ax.set_ylabel(name,fontsize='x-large')
         ax.set_title(desdic.get(name,name))
         ax.set_xticklabels(dfatt.index.tolist(), rotation = 45,fontsize='x-large')
