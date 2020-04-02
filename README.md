@@ -97,20 +97,15 @@ Also bear in mind that ModelFlow is experimental. It is provided ”as is”, wi
 
 ## Getting started
 
-You need Python 3.6+ with asssociated libraries. The easy way is to install Anaconda Python [https://www.anaconda.com/distribution](https://www.anaconda.com/distribution)
+You need Python 3.7+ with asssociated libraries. The easy way is to install Anaconda Python is to download the distribution from [https://www.anaconda.com/distribution](https://www.anaconda.com/distribution)
 
-In addition to the standard packagdes in the Anaconda distribution you need: **Graphviz** and **cvxopt**: they can be installed by running a command window from the Anaconda prompt and execute theese commands 
+Now you can install ModelFlow by running a command window from the Anaconda prompt and execute theese commands 
 ```
-conda install graphviz
-conda install cvxopt
+conda install modelflow -c ibh -c defaults -c conda-forge
 ```
 You will find the anaconda prompt by searching "anaconda" in the start menu search field
 
-Now you want to download the modelflow repo. This can be done either using git or by downloading the repo as a zip file and unzip the content in your local drive. you can use any location but one suggestion could be c:\modelflow.
-
-Now you want the PYTHONPATH enviroment variable to point to the location of the model flow library. In this case c:modelflow\src. This is most easily done through the Spyder editor:tools>PYTHONPATH manager. Add the pahth and press the syncrize buttom to syncronize the spyder PYTHONPATH with the environment variable.
-
-Now you are in business. Try out one of the workbooks. to do this you
+Try out one of the workbooks. to do this you:
 ```
 click on the Adaconda prompth in the Anaconda folder
 cd <The location you have downloaded the workbooks>
