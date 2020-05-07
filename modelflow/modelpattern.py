@@ -182,9 +182,9 @@ def udtryk_parse(udtryk,funks=[]):
     ibh = [nterm._make(t) for t in xxx]   # Easier to remember by using named tupels . 
     return ibh
 
-def kw_frml_name(frml_name, kw):
+def kw_frml_name(frml_name, kw,default=None):
     ''' find keywords and associated value from string '<kw=xxx,res=kdkdk>' '''
-    out = 0
+    out = None
     if '<' in frml_name:
         j = frml_name.find('<')  # where is the <
         for s in frml_name[j + 1:-1].split(','):
@@ -194,6 +194,8 @@ def kw_frml_name(frml_name, kw):
                     out = keyvalue[1]
                 else:
                     out = 1
+    if type(out)  == type(None) and type(default)!=type(None):
+        out=default 
     return out
 
 def f1():

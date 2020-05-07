@@ -458,6 +458,7 @@ def get_compagnion(model,df,per,show=False) :
     newnames = [c+'('+str(l)+')' for l in sorted(lags,reverse=False) for c in names]       
     
     out =  pd.DataFrame(ib2,index=newnames,columns=newnames)
+    # breakpoint()
     return out
 
 def get_eigen(model,df,per) :

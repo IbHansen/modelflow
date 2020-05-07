@@ -84,3 +84,10 @@ def update_var(databank,var,operator='=',inputval=0,start='',slut='',create=1, l
                 diff=newdata-orgdata
                 for i in current_per:
                     print(('{:<'+forspalte+'} {:>20.4f} {:>20.4f} {:>20.4f}').format(str(i),orgdata[i],newdata[i],diff[i]))                
+
+def tovarlag(var,lag):
+    ''' creates a stringof var(lag) if lag else just lag '''
+    if type(lag)==int:
+        return f'{var}({lag:+})' if lag else var
+    else:
+        return f'{var}({lag})' if lag else var

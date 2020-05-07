@@ -341,7 +341,7 @@ def find_arg(funk, streng):
                 return tstreng[:start], match[:index], match[index + 1:]
 
 
-def sumunroll(in_equations,listin=False):
+def sumunroll_old(in_equations,listin=False):
     ''' expands all sum(list,'expression') in a model
     returns a new model'''
     nymodel = []
@@ -357,6 +357,39 @@ def sumunroll(in_equations,listin=False):
                 sumover, sumled = sumudtryk.split(',', 1)
                 current_dict = liste_dict[sumover]
                 ibsud = sub_frml(current_dict, sumled, '+', '', sep='')
+                value = forsum + '(' + ibsud + ')' + eftersum
+            nymodel.append(command + ' ' + value)
+    equations = '\n'.join(nymodel)
+    return equations
+
+def sumunroll(in_equations,listin=False):
+    ''' expands all sum(list,'expression') in a model
+    if sum(list xvar=lig,'expression') only list elements where the condition is 
+    satisfied wil be summed
+    
+    returns a new model'''
+    nymodel = []
+    equations = in_equations[:].upper()  # we want do change the e
+    liste_dict = listin if listin else list_extract(equations)   # Search the whold model for lists
+    for comment, command, value in find_statements(equations):
+       # print('>>',comment,'<',command,'>',value)
+        if comment:
+            nymodel.append(comment)
+        else:
+            while 'SUM(' in value.upper():
+                forsum, sumudtryk, eftersum = find_arg('sum', value.upper())
+                suminit, sumled = sumudtryk.split(',', 1)
+                
+                if '=' in suminit:
+                    sumover,remain = suminit.split(' ',1)
+                    xvar,lig =remain.replace(' ','').split('=')
+                else:
+                    sumover = suminit
+                    xvar=''
+                    lig=''
+                    
+                current_dict = liste_dict[sumover]
+                ibsud = sub_frml(current_dict, sumled, '+', xvar=xvar,lig=lig,sep='')
                 value = forsum + '(' + ibsud + ')' + eftersum
             nymodel.append(command + ' ' + value)
     equations = '\n'.join(nymodel)
@@ -854,6 +887,73 @@ def doable(formulars):
             out.append(exp+ ' $ \n')
     return ''.join(out)
 
+def findindex_gams(ind00):
+    ''' 
+     - an equation looks like this
+     - <frmlname> [index] lhs = rhs 
+    
+    this function find frmlname and index variables on the left hand side. meaning variables braced by {} '''
+    ind0 = ind00.strip()
+    if ind0.startswith('<'):
+        frmlname = re.findall('\<.*?\>',ind0)[0]
+        ind = ind0[ind0.index('>')+1:].strip()
+    else:
+        frmlname='<>'
+        ind=ind0.strip()
+        
+    if ind.startswith('['):
+        allindex = re.findall('\[.*?\]',ind0)[0]
+        index = allindex[1:-1].split(',')
+        rest = ind[ind.index(']')+1:]
+    else:
+        index = []
+        rest = ind
+    return frmlname,index,rest
+
+def un_normalize_expression(frml) :
+    '''This function makes sure that all formulas are unnormalized.
+    if the formula is already decorated with <endo=name> this is kept 
+    else the lhs_varriable is used in <endo=> 
+    ''' 
+    frml_name,frml_index,frml_rest = findindex_gams(frml.upper())
+    this_endo = kw_frml_name(frml_name.upper(), 'ENDO')
+    # breakpoint()
+    lhs,rhs  = frml_rest.split('=')
+    if this_endo: 
+        lhs_var = this_endo.strip()
+        frml_name_out = frml_name
+    else:
+        lhs_var = lhs.strip()
+        # frml_name_out = f'<endo={lhs_var}>' if frml_name == '<>' else f'{frml_name[:-1]},endo={lhs_var}>'
+        frml_name_out = frml_name[:]
+    # print(this_endo)
+    new_rest = f'{lhs_var}___res = ( {rhs.strip()} ) - ( {lhs.strip()} )'
+    return f'{frml_name_out} {frml_index if len(frml_index) else ""} {new_rest}'
+ 
+
+def un_normalize_model(in_equations,funks=[]):
+    ''' un normalize a model '''
+    nymodel=[]
+    equations=in_equations.upper()  # we want do change the e
+   # modelprint(equations)
+    for comment,command,value in find_statements(equations):
+        # print('>>',comment,'<',command,'>',value)
+        # breakpoint()
+        if comment:
+            nymodel.append(comment)
+        elif command=='FRML':
+            un_frml = un_normalize_expression(value[:-1])
+            nymodel.append(f'FRML {un_frml} $')
+        else:
+            nymodel.append(command+' '+value)
+    equations='\n'.join(nymodel)
+    return equations  
+
+def un_normalize_simpel(in_equations,funks=[]):
+   ''' un-normalize expressions delimeted by linebreaks'''
+   edm  = '\n'.join(un_normalize_expression(f) for f in in_equations.split('\n') if len(f.strip()))
+   fdm  = explode(edm)
+   return fdm
 
 
 def eksempel(ind):
@@ -926,7 +1026,9 @@ if __name__ == '__main__' and 1 :
     do bankdic ko = no $ 
     frml x {bank}_income = {bank}_a +{bank}_b $
     enddo $ 
-    frml x ialt=sum(bankdic,{bank}_income $'''))
+    frml x ialt=sum(bankdic ko= yes,{bank}_income ) $'''))
+    # breakpoint()
+    print(sumunroll(x))
 #%%
     print(sumunroll(dounloop(
     '''list BANKDIC = bank : Danske , Nordea $

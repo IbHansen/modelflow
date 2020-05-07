@@ -27,6 +27,7 @@ import webbrowser as wb
 import importlib
 import gc
 import copy 
+import matplotlib.pyplot as plt 
 
 
 
@@ -41,6 +42,7 @@ import os
 import modelmanipulation as mp
 import modelvis as mv
 import modelpattern as pt 
+from modelnet import draw_adjacency_matrix
 
 # functions used in BL language 
 from scipy.stats import norm 
@@ -163,6 +165,8 @@ class BaseModel():
                              
         self.endogene = {x for x in self.allvar.keys() if     self.allvar[x]['endo']}   
         self.exogene  = {x for x in self.allvar.keys() if not self.allvar[x]['endo']}
+        self.exogene_true= {v for v in self.exogene if not v+'___RES' in self.endogene}
+        
 
 #        # the order as in the equations 
 #        for iz, a in enumerate(sorted(self.allvar)):
@@ -202,7 +206,7 @@ class BaseModel():
                         self.allvar[var]['dropfrml'] = False
          
             except:
-                print('This model has simultaneous elements or cyclical elements.')
+                # print('This model has simultaneous elements or cyclical elements.')
                 self.istopo = False 
                 self.solveorder = self.nrorder
 
@@ -246,6 +250,8 @@ class BaseModel():
     def pull_smpl():
         '''pull the pushed smpl''' 
         self.current_per = copy.deepcopy(self.pushed_current_per)
+                
+        
 
     @property
     def endograph(self) :
@@ -260,8 +266,7 @@ class BaseModel():
 #            print(edges)
             self._endograph=nx.DiGraph(edges)
             self._endograph.add_nodes_from(self.endogene)
-        return self._endograph  
-  
+        return self._endograph   
 
     @property 
     def calculate_freq(self):
@@ -746,8 +751,12 @@ class model(BaseModel):
                upat=pat
         else:
                upat = [pat]
+               if pat.upper() == '#ENDO':
+                   out = sorted(self.endogene)
+                   return out 
                
         ipat = upat
+        
             
         try:       
             out = [v for  p in ipat for up in p.split() for v in sorted(fnmatch.filter(self.allvar.keys(),up.upper()))]  
@@ -982,26 +991,57 @@ class model(BaseModel):
     
     @property 
     def totgraph(self):
-        ''' The graph of all variables including and seperate lagged variable '''
-        if not hasattr(self,'_totgraph'):
+         ''' Returns the total graph of the model, including leads and lags '''
+        
+        
+         if not hasattr(self,'_totgraph'):
+             self._totgraph =self.totgraph_get()
+             
+         return self._totgraph
+     
+    @property
+    def endograph_lag_lead(self):
+         ''' Returns the graph of all endogeneous variables including lags and leads'''
+        
+         if not hasattr(self,'_endograph_lag_lead'):
+             self._endograph_lag_lead =self.totgraph_get(onlyendo=True)
+             
+         return self._endograph_lag_lead
+     
+    def totgraph_get(self,onlyendo=False):
+            ''' The graph of all variables including and seperate lagged and leaded variable 
+            
+            onlyendo : only endogenous variables are part of the graph 
+            
+            '''
 
             def lagvar(xlag):
                 ''' makes a string with lag ''' 
                 return   '('+str(xlag)+')' if int(xlag) < 0 else '' 
             
+            def lagleadvar(xlag):
+                ''' makes a string with lag or lead ''' 
+                return   f'({int(xlag):+})' if int(xlag) !=  0 else '' 
+            
             terms = ((var,inf['terms']) for  var,inf in self.allvar.items() 
                            if  inf['endo'])
             
             rhss    = ((var,term[term.index(self.aequalterm):]) for  var,term in terms )
-            rhsvar = ((var,{(v.var+'('+v.lag+')' if v.lag else v.var) for v in rhs if v.var}) for var,rhs in rhss)
+            if onlyendo:
+                rhsvar = ((var,{(v.var+'('+v.lag+')' if v.lag else v.var) for v in rhs if v.var if v.var in self.endogene}) for var,rhs in rhss)
+                edgeslag  = [(v+lagleadvar(lag+1),v+lagleadvar(lag)) for v,inf in self.allvar.items()           for lag  in range(inf['maxlag'],0) if v in self.endogene]
+                edgeslead = [(v+lagleadvar(lead-1),v+lagleadvar(lead)) for v,inf in self.allvar.items() for lead in range(inf['maxlead'],0,-1) if v in self.endogene]
+            else:
+                rhsvar = ((var,{(v.var+'('+v.lag+')' if v.lag else v.var) for v in rhs if v.var}) for var,rhs in rhss)
+                edgeslag  = [(v+lagleadvar(lag+1),v+lagleadvar(lag)) for v,inf in self.allvar.items()           for lag  in range(inf['maxlag'],0)]
+                edgeslead = [(v+lagleadvar(lead-1),v+lagleadvar(lead)) for v,inf in self.allvar.items() for lead in range(inf['maxlead'],0,-1)]
             
     #            print(list(rhsvar))
             edges = (((v,e) for e,rhs in rhsvar for v in rhs))
-            edgeslag = [(v+lagvar(lag+1),v+lagvar(lag)) for v,inf in self.allvar.items() for lag in range(inf['maxlag'],0)]
     #        edgeslag = [(v,v+lagvar(lag)) for v,inf in m2test.allvar.items() for lag in range(inf['maxlag'],0)]
-            self._totgraph = nx.DiGraph(chain(edges,edgeslag))
+            totgraph = nx.DiGraph(chain(edges,edgeslag,edgeslead))
 
-        return self._totgraph             
+            return totgraph             
 
 
     def graph_remove(self,paralist):
@@ -1026,9 +1066,11 @@ class model(BaseModel):
     
     def exodif(self,a=None,b=None):
         ''' Finds the differences between two dataframes in exogeneous variables for the model
-        Defaults to getting the two dataframes (basedf and lastdf) internal to the model instance ''' 
-        aexo=a.loc[:,self.exogene] if isinstance(a,pd.DataFrame) else self.basedf.loc[:,self.exogene]
-        bexo=b.loc[:,self.exogene] if isinstance(b,pd.DataFrame) else self.lastdf.loc[:,self.exogene] 
+        Defaults to getting the two dataframes (basedf and lastdf) internal to the model instance 
+        
+        Exogeneous with a name ending in <endo>__RES are not taken in, as they are part of a un_normalized model''' 
+        aexo=a.loc[:,self.exogene_true] if isinstance(a,pd.DataFrame) else self.basedf.loc[:,self.exogene_true]
+        bexo=b.loc[:,self.exogene_true] if isinstance(b,pd.DataFrame) else self.lastdf.loc[:,self.exogene_true] 
         diff = pd.eval('bexo-aexo')
         out2=diff.loc[(diff != 0.0).any(axis=1),(diff != 0.0).any(axis=0)]
                      
@@ -1287,6 +1329,8 @@ class model(BaseModel):
     
         pctendo=pctendo[pctendo.columns].astype(float)    
         return res2df,resdf,pctendo
+    
+    
       
     def treewalk(self,g,navn, level = 0,parent='Start',maxlevel=20,lpre=True):
         ''' Traverse the call tree from name, and returns a generator \n
@@ -1312,12 +1356,59 @@ class model(BaseModel):
                     print('---'*v.lev+v.child)                    
                 if ldekomp :
                     x=self.dekomp(v.child,lprint=1,start=start,end=end)
+
+
                 
+    def dekomp_plot_per(self,varnavn,sort=False,pct=True,per='',threshold= 0.0):
+        
+        thisper = self.current_per[-1] if per == '' else per
+        xx = self.dekomp(varnavn.upper(),lprint=False)
+        ddf = join_name_lag(xx[2] if pct else xx[1])
+#        tempdf = pd.DataFrame(0,columns=ddf.columns,index=['Start']).append(ddf)
+        tempdf = ddf
+        per_loc = tempdf.columns.get_loc(per)
+        nthreshold = '' if threshold == 0.0 else f', threshold = {threshold}'
+        ntitle=f'Equation attribution, pct{nthreshold}:{per}' if pct else f'Formula attribution {nthreshold}:{per}'
+        plotdf = tempdf.loc[[c for c in tempdf.index.tolist() if c.strip() != 'Total']
+                ,:].iloc[:,[per_loc]]
+        plotdf.columns = [varnavn.upper()]
+#        waterdf = self.cutout(plotdf,threshold)
+        waterdf = plotdf
+        res = mv.waterplot(waterdf,autosum=1,allsort=sort,top=0.86,
+                           sort=sort,title=ntitle,bartype='bar',threshold=threshold);
+        return res
     
+
+        
+    def dekomp_plot(self,varnavn,sort=True,pct=True,per='',top=0.9,threshold=0.0):
+        xx = self.dekomp(varnavn,lprint=False)
+        ddf0 = join_name_lag(xx[2] if pct else xx[1]).pipe(
+                lambda df: df.loc[[i for i in df.index if i !='Total'],:])
+        ddf = cutout(ddf0,threshold )
+        fig, axis = plt.subplots(nrows=1,ncols=1,figsize=(10,5),constrained_layout=False)
+        ax = axis
+        ddf.T.plot(ax=ax,stacked=True,kind='bar')
+        ax.set_ylabel(varnavn,fontsize='x-large')
+        ax.set_xticklabels(ddf.T.index.tolist(), rotation = 45,fontsize='x-large')
+        nthreshold = f'' if threshold == 0.0 else f', threshold = {threshold}'
+
+        ntitle = f'Equation attribution{nthreshold}' if threshold == 0.0 else f'Equation attribution {nthreshold}'
+        fig.suptitle(ntitle,fontsize=20)
+        fig.subplots_adjust(top=top)
+        
+        return fig  
+
+        
      
     def drawendo(self,**kwargs):
        '''draws a graph of of the whole model''' 
        alllinks = (node(0,n[1],n[0]) for n in self.endograph.edges())
+       return self.todot2(alllinks,**kwargs)
+   
+    
+    def drawendo_lag_lead(self,**kwargs):
+       '''draws a graph of of the whole model''' 
+       alllinks = (node(0,n[1],n[0]) for n in self.endograph_lag_lead.edges())
        return self.todot2(alllinks,**kwargs) 
 
     def drawmodel(self,lag=True,**kwargs):
@@ -1325,6 +1416,11 @@ class model(BaseModel):
         graph = self.totgraph if lag else self.totgraph_nolag
         alllinks = (node(0,n[1],n[0]) for n in graph.edges())
         return self.todot2(alllinks,**kwargs) 
+    
+    def plotadjacency(self,size=(5,5)):
+        fig   = draw_adjacency_matrix(self.endograph,self.precoreepiorder,
+                    self._superstrongblock,self._superstrongtype,size=size)
+        return fig 
    
     def draw(self,navn,down=7,up=7,lag=True,endo=False,**kwargs):
        '''draws a graph of dependensies of navn up to maxlevel
@@ -1708,10 +1804,10 @@ class model(BaseModel):
         warnings = "" if kwargs.get("warnings",False) else "-q"    
 #        run('dot -Tsvg  -Gsize=9,9\! -o'+svgname+' "'+filename+'"',shell=True) # creates the drawing  
         run(f'dot -Tsvg  -Gsize={size[0]},{size[1]}\! -o{svgname} "{filename}"   {warnings} ',shell=True) # creates the drawing  
-        run(f'dot -Tpng  -Gsize={size[0]},{size[1]}\! -o{pngname} "{filename}"  {warnings} ',shell=True) # creates the drawing  
+        run(f'dot -Tpng  -Gsize={size[0]},{size[1]}\! -Gdpi=300 -o{pngname} "{filename}"  {warnings} ',shell=True) # creates the drawing  
         run(f'dot -Tpdf  -Gsize={size[0]},{size[1]}\! -o{pdfname} "{filename}"  {warnings} ',shell=True) # creates the drawing  
-#        run('dot -Tpdf  -Gsize=9,9\! -o'+pdfname+' "'+filename+'"',shell=True) # creates the drawing  
-#        run('dot -Teps  -Gsize=9,9\! -o'+epsname+' "'+filename+'"',shell=True) # creates the drawing  
+       # run('dot -Tpdf  -Gsize=9,9\! -o'+pdfname+' "'+filename+'"',shell=True) # creates the drawing  
+       # run('dot -Teps  -Gsize=9,9\! -o'+epsname+' "'+filename+'"',shell=True) # creates the drawing  
 
         if 'svg' in kwargs:
             display(SVG(filename=svgname[1:-1]))
@@ -1949,6 +2045,45 @@ def randomdf(df,row=False,col=False,same=False,ran=False,cpre='C',rpre='R'):
             rowdic = {c : rpre+('{0:0'+dec+'d}').format(i)  for i,c in enumerate(ranrow)}
             dfout = dfout.rename(index=rowdic).sort_index(axis=0)
     return dfout  
+    
+def cutout(input,threshold=0.0):
+    '''get rid of rows below treshold and returns the dataframe or serie '''
+    if type(input)==pd.DataFrame:
+        org_sum = input.sum(axis=0)   
+        new = input.iloc[(abs(input) >= threshold).any(axis=1).values,:]
+        if len(new) < len(input):
+            new_sum = new.sum(axis=0)
+            small = org_sum - new_sum
+            small.name = 'Small'
+            output = new.append(small)
+        else:
+            output = input 
+        return output
+    if type(input)==pd.Series:
+        org_sum = input.sum()   
+        new = input.iloc[(abs(input) >= threshold).values]
+        if len(new) < len(input):
+            new_sum = new.sum()
+            small = pd.Series(org_sum - new_sum)
+            small.index = ['Small']
+            output = new.append(small)
+        else:
+            output=input
+        return output
+    
+
+def join_name_lag(df):
+    '''creates a new dataframe where  the name and lag from multiindex is joined
+
+    as input a dataframe where name and lag are two levels in multiindex 
+    '''
+    
+    xl = lambda x: f"({x[1]})" if x[1] else ""
+    newindex = [f'{i[0]}{xl(i)}'  for i in zip(df.index.get_level_values(0),df.index.get_level_values(1))]
+    newdf = df.copy()
+    newdf.index = newindex
+    return newdf
+
    
 @contextmanager
 def ttimer(input='test',show=True,short=False):
@@ -2105,3 +2240,13 @@ if __name__ == '__main__' :
         b = mx.res(df)
     with ttimer('dddd') as t:
         u=2*2
+    
+    smallmodel      = '''
+frml <> a = c(-1) + b $ 
+frml <> d1 = x + 3 * a(-1)+ c **2 +a  $ 
+frml <> d3 = x + 3 * a(-1)+c **3 $  
+Frml <> x = 0.5 * c +a(+1)$'''
+    mmodel = model(smallmodel)
+    mmodel.drawendo()
+    mmodel.drawendo_lag_lead()
+    mmodel.drawmodel()
